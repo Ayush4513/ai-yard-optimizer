@@ -29,10 +29,10 @@ ENV/
 env/
 
 # Database
-*.db
-*.sqlite
-*.sqlite3
-yard_optimization.db
+# *.db
+# *.sqlite
+# *.sqlite3
+# yard_optimization.db
 
 # IDE
 .vscode/

@@ -151,10 +151,23 @@ class Block(Base):
     yard_name = Column(String, nullable=False, index=True)
     block_name = Column(String, nullable=False)
     block_type = Column(String, nullable=False)  # General, Reefer, Hazmat, Empty, OOG
-    position_x = Column(Float, nullable=False)
-    position_y = Column(Float, nullable=False)
+    position_x = Column(Float, nullable=True)
+    position_y = Column(Float, nullable=True)
     total_slots = Column(Integer, nullable=False)
     occupied_slots = Column(Integer, default=0, nullable=False)
+
+    # Fields from yard_configuration Excel
+    yard_id = Column(String, nullable=True, index=True)
+    yard_category = Column(String, nullable=True)  # Sea-Side, Land-Side, OOG
+    block_number = Column(Integer, nullable=True)
+    bays = Column(Integer, nullable=True)
+    rows = Column(Integer, nullable=True)
+    max_tier = Column(Integer, nullable=True)
+    reefer_plugs = Column(Integer, nullable=True)
+    hazmat_certified = Column(Boolean, default=False, nullable=True)
+    empty_storage = Column(Boolean, default=False, nullable=True)
+    primary_use = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
 
     # Relationship
     locations = relationship("YardLocation", back_populates="block")

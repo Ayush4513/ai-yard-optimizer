@@ -1,7 +1,7 @@
 """LangChain-based retrieval chain for querying ChromaDB and Neo4j."""
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from typing import List, Dict, Any, Optional
 import logging
 from Modules.database.chroma_client import chroma_client

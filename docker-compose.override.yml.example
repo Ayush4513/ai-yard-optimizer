@@ -1,0 +1,14 @@
+# Example override file for local development
+# Copy this to docker-compose.override.yml and customize
+
+version: '3.8'
+
+services:
+  api:
+    # Override to mount source code for hot-reload during development
+    volumes:
+      - .:/app
+      - /app/venv  # Exclude venv from mount
+    # Uncomment for development with hot-reload
+    # command: ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+

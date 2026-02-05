@@ -1,0 +1,19 @@
+﻿rule_id,rule_name,category,priority,applies_level,conditions,constraint,constraint_params,violation_message
+HZ-01,Explosives isolation,Hazmat,P0 Safety,YARD,imdg==1,SEPARATE,dedicated_explosive_yard,Explosives must be isolated
+HZ-02,Oxidizer vs Flammable Liquid,Hazmat,P1 Regulatory,BAY,A=5.1 AND B=3,DISTANCE_BUFFER,≥1 bay,Oxidizer & flammable too close
+HZ-03,Oxidizer vs flammable solids,Hazmat,P1 Regulatory,BLOCK,"A=5.1 AND B∈{4.1,4.2,4.3}",SEPARATE,block,Fire escalation risk
+HZ-04,Dangerous when wet vs liquids,Hazmat,P0 Safety,ROW,"A=4.3 AND B∈{3,8}",SEPARATE,row,Violent reaction risk
+HZ-05,Toxic gas vs corrosive,Hazmat,P0 Safety,BLOCK,A=2.3 AND B=8,SEPARATE,block,Toxic–corrosive cloud
+HZ-06,Toxic vs food,Hazmat,P0 Safety,YARD,A=6.1 AND food,SEPARATE,zone,Contamination risk
+HZ-07,Flammable vs corrosive,Hazmat,P1 Regulatory,BAY,A=3 AND B=8,DISTANCE_BUFFER,bay,Fire + spill risk
+HZ-08,Flammable solid vs oxidizer,Hazmat,P1 Regulatory,ROW,A=4.1 AND B=5.1,SEPARATE,row,Fire acceleration
+HZ-09,Flammable gas vs liquid,Hazmat,P1 Regulatory,ROW,A=2.1 AND B=3,DISTANCE_BUFFER,row,Explosion risk
+HZ-10,Toxic vs flammable,Hazmat,P1 Regulatory,BAY,A=6.1 AND B=3,SEPARATE,bay,Toxic plume
+HZ-11,DG vertical incompatibility,Hazmat,P0 Safety,TIER,incompatible DG vertical,FORBID,above/below,Cascading reaction
+HZ-12,DG above food,Hazmat,P0 Safety,TIER,DG above food,FORBID,vertical,Food contamination
+HZ-13,DG near reefer,Hazmat,P1 Regulatory,BLOCK,DG AND reefer,SEPARATE,approved zones,Electrical ignition
+HZ-14,Radioactive isolation,Hazmat,P0 Safety,YARD,imdg==7,SEPARATE,radioactive yard,Radiation exposure
+HZ-15,High-risk explosives,Hazmat,P0 Safety,YARD,"imdg∈{1.1,1.2}",FORBID,except remote yard,Mass detonation
+HZ-16,Low-risk explosives,Hazmat,P1 Regulatory,BLOCK,"imdg∈{1.3,1.4}",SEPARATE,block,Controlled blast
+HZ-17,Misc DG case-based,Hazmat,P1 Regulatory,ROW,imdg==9,POLICY_LOOKUP,VAR_HZ_MISC_POLICY,Substance specific
+HZ-18,Heavier DG below,Hazmat,P0 Safety,TIER,heavier DG above lighter,ORDERING,heavier_below,Stability risk

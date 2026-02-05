@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router";
 import {
   LayoutDashboard,
@@ -28,11 +28,13 @@ import {
 import { cn } from "@/app/components/ui/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/app/components/ui/sheet";
 import { useLocationContext } from "@/app/contexts/LocationContext";
+import { useAIAssistant } from "@/app/contexts/AIAssistantContext";
+import { AIAssistantWidget } from "@/app/components/ai-assistant-widget";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Yard View", href: "/yard", icon: Layers },
-  { name: "Containers", href: "/containers", icon: Container },
+  { name: "Container Movement", href: "/containers", icon: Container },
   { name: "Recommendations", href: "/recommendations", icon: Sparkles, badge: 12 },
   { name: "Timeline", href: "/timeline", icon: Clock },
   { name: "Simulator", href: "/simulator", icon: FlaskConical },
@@ -43,6 +45,19 @@ export function RootLayout() {
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { selectedLocation, setSelectedLocation } = useLocationContext();
+  const { setCurrentScreen } = useAIAssistant();
+
+  // Update AI Assistant context based on current route
+  useEffect(() => {
+    const currentNav = navigation.find((item) => {
+      if (item.href === "/") return location.pathname === "/";
+      return location.pathname.startsWith(item.href);
+    });
+
+    if (currentNav) {
+      setCurrentScreen(currentNav.name);
+    }
+  }, [location.pathname, setCurrentScreen]);
 
   const NavLink = ({ item, mobile = false }: { item: typeof navigation[0]; mobile?: boolean }) => {
     const isActive = location.pathname === item.href || (item.href !== "/" && location.pathname.startsWith(item.href));
@@ -117,28 +132,6 @@ export function RootLayout() {
             )}
           </Button>
         </div>
-
-        {/* Location Selector */}
-        {!isCollapsed && (
-          <div className="border-b border-gray-200 p-4">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-between">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4" />
-                    <span>{selectedLocation}</span>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="start">
-                <DropdownMenuLabel>Select Location</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setSelectedLocation("Dhanay Tuticorin Terminal (CFS)")}>Dhanay Tuticorin Terminal (CFS)</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSelectedLocation("TICT Port Terminal")}>TICT Port Terminal</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
@@ -222,6 +215,9 @@ export function RootLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* AI Assistant Widget */}
+      <AIAssistantWidget />
     </div>
   );
 }

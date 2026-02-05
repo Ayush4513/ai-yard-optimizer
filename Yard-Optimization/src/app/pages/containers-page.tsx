@@ -2,35 +2,23 @@ import { useState, useEffect } from "react";
 import { containerAPI } from "@/services/api";
 import { toast } from "sonner";
 import {
-  Container,
   Clock,
   MapPin,
-  Ship,
-  Truck,
   AlertCircle,
   Package,
   Search,
   Filter,
-  Download,
   MoreHorizontal,
   Eye,
   Flame,
   Snowflake,
   Plus,
-  Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/app/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/app/components/ui/select";
 import {
   Table,
   TableBody,
@@ -235,10 +223,17 @@ const outgoingContainers = [
 ];
 
 export function ContainersPage() {
-  const [filterType, setFilterType] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
   const [containerIdFilter, setContainerIdFilter] = useState("");
   const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
+  const [mainTab, setMainTab] = useState("incoming");
+  const [incomingSubTab, setIncomingSubTab] = useState("all");
+  const [yardSubTab, setYardSubTab] = useState("all");
+  const [retrievalSubTab, setRetrievalSubTab] = useState("all");
+  const [filterFlow, setFilterFlow] = useState("all");
+  const [filterETA, setFilterETA] = useState("all");
+  const [filterPlanStatus, setFilterPlanStatus] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterSource, setFilterSource] = useState("all");
 
   // Container details modal state
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
@@ -273,17 +268,46 @@ export function ContainersPage() {
     loadContainers();
   };
 
-  // Filter containers by status and container ID
-  const filterByContainerId = (containers: any[]) => {
-    if (!containerIdFilter.trim()) return containers;
-    return containers.filter((c: any) =>
-      c.container_number?.toLowerCase().includes(containerIdFilter.toLowerCase())
-    );
+  // Filter containers by status, type and container ID
+  const filterContainers = (containers: any[], subTab: string) => {
+    let filtered = containers;
+
+    // Filter by container ID
+    if (containerIdFilter.trim()) {
+      filtered = filtered.filter((c: any) =>
+        c.container_number?.toLowerCase().includes(containerIdFilter.toLowerCase())
+      );
+    }
+
+    // Filter by sub-tab (type: all, import, export, empties)
+    if (subTab === "import") {
+      filtered = filtered.filter((c: any) => c.flow_type === "Import");
+    } else if (subTab === "export") {
+      filtered = filtered.filter((c: any) => c.flow_type === "Export");
+    } else if (subTab === "empties") {
+      filtered = filtered.filter((c: any) => c.is_empty === true || c.is_empty === 1);
+    }
+    // "all" shows everything, no additional filter needed
+
+    // Filter by priority
+    if (filterPriority !== "all") {
+      filtered = filtered.filter((c: any) =>
+        c.pod_priority?.toLowerCase() === filterPriority.toLowerCase()
+      );
+    }
+
+    return filtered;
   };
 
-  const incomingContainers = filterByContainerId(allContainers.filter((c: any) => !c.current_location_id));
-  const inYardContainers = filterByContainerId(allContainers.filter((c: any) => c.current_location_id));
-  const outgoingContainers = filterByContainerId(allContainers.filter((c: any) => c.customs_status === 'Cleared' && c.current_location_id));
+  // Categorize containers
+  const incomingContainers = allContainers.filter((c: any) => !c.current_location_id);
+  const inYardContainers = allContainers.filter((c: any) => c.current_location_id && c.customs_status !== 'Cleared');
+  const outgoingContainers = allContainers.filter((c: any) => c.customs_status === 'Cleared' && c.current_location_id);
+
+  // Apply filters based on active tab
+  const filteredIncoming = filterContainers(incomingContainers, incomingSubTab);
+  const filteredYard = filterContainers(inYardContainers, yardSubTab);
+  const filteredRetrieval = filterContainers(outgoingContainers, retrievalSubTab);
 
   // Show workflow instead of main page when open
   if (isWorkflowOpen) {
@@ -306,123 +330,91 @@ export function ContainersPage() {
           </Button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Incoming</p>
-                  <p className="mt-1 text-2xl font-bold">{incomingContainers.length}</p>
-                </div>
-                <Truck className="h-8 w-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">In Yard</p>
-                  <p className="mt-1 text-2xl font-bold">{inYardContainers.length}</p>
-                </div>
-                <Container className="h-8 w-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Outgoing</p>
-                  <p className="mt-1 text-2xl font-bold">{outgoingContainers.length}</p>
-                </div>
-                <Ship className="h-8 w-8 text-orange-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">High Priority</p>
-                  <p className="mt-1 text-2xl font-bold">8</p>
-                </div>
-                <AlertCircle className="h-8 w-8 text-red-600" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Filters and Search */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="relative flex-1 min-w-[300px]">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Search by container ID..."
-                  className="pl-9"
-                  value={containerIdFilter}
-                  onChange={(e) => setContainerIdFilter(e.target.value)}
-                />
-              </div>
-
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Container Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="export">Export</SelectItem>
-                  <SelectItem value="import">Import</SelectItem>
-                  <SelectItem value="empty">Empty</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Priorities</SelectItem>
-                  <SelectItem value="high">High Priority</SelectItem>
-                  <SelectItem value="normal">Normal Priority</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Button variant="outline">
-                <Filter className="mr-2 h-4 w-4" />
-                More Filters
-              </Button>
-
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Tabs for different container views */}
-        <Tabs defaultValue="incoming" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3">
+        {/* Main Tabs */}
+        <Tabs value={mainTab} onValueChange={setMainTab} className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-3 mb-6">
             <TabsTrigger value="incoming">
-              Incoming ({incomingContainers.length})
+              Incoming Containers ({incomingContainers.length})
             </TabsTrigger>
-            <TabsTrigger value="inyard">
-              In Yard ({inYardContainers.length})
+            <TabsTrigger value="yard">
+              Yard Inventory ({inYardContainers.length})
             </TabsTrigger>
-            <TabsTrigger value="outgoing">
-              Outgoing ({outgoingContainers.length})
+            <TabsTrigger value="retrieval">
+              Container Retrieval ({outgoingContainers.length})
             </TabsTrigger>
           </TabsList>
 
-          {/* Incoming Containers */}
-          <TabsContent value="incoming" className="mt-6">
-            <Card>
-              <CardContent className="p-0">
-                <Table>
+          {/* Incoming Containers Tab */}
+          <TabsContent value="incoming" className="mt-0">
+            {/* Search and Filters Row */}
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative flex-1 min-w-[250px]">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      placeholder="Search by container ID, Shipping Bill..."
+                      className="pl-9"
+                      value={containerIdFilter}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContainerIdFilter(e.target.value)}
+                    />
+                  </div>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Flow
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    ETA
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Plan Status
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Priority
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Source
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Columns
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Sub-tabs for Incoming Containers */}
+            <Tabs value={incomingSubTab} onValueChange={setIncomingSubTab} className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="all">
+                  All ({filterContainers(incomingContainers, "all").length})
+                </TabsTrigger>
+                <TabsTrigger value="import">
+                  Import ({filterContainers(incomingContainers, "import").length})
+                </TabsTrigger>
+                <TabsTrigger value="export">
+                  Export ({filterContainers(incomingContainers, "export").length})
+                </TabsTrigger>
+                <TabsTrigger value="empties">
+                  Empties ({filterContainers(incomingContainers, "empties").length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="all" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Container ID</TableHead>
@@ -522,11 +514,9 @@ export function ContainersPage() {
                 </Table>
               </CardContent>
             </Card>
-
           </TabsContent>
 
-          {/* In Yard Containers */}
-          <TabsContent value="inyard" className="mt-6">
+          <TabsContent value="import" className="mt-0">
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -535,15 +525,352 @@ export function ContainersPage() {
                       <TableHead>Container ID</TableHead>
                       <TableHead>Size/Type</TableHead>
                       <TableHead>Vessel/Voyage</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Dwell Time</TableHead>
+                      <TableHead>Origin</TableHead>
+                      <TableHead>ETA</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Last Move</TableHead>
+                      <TableHead>Priority</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {inYardContainers.map((container) => (
+                    {filteredIncoming.map((container) => (
+                      <TableRow key={container.container_id} className="hover:bg-gray-50">
+                        <TableCell className="font-mono text-sm font-medium">
+                          <div className="flex items-center gap-2">
+                            {container.container_number}
+                            {container.hazmat_flag && <Flame className="h-4 w-4 text-red-600" />}
+                            {container.reefer_flag && <Snowflake className="h-4 w-4 text-cyan-600" />}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                            <div className="text-gray-600">{container.weight_mt} MT</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{container.vessel_id || "-"}</div>
+                            <div className="text-gray-600">{container.voyage_id || "-"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{container.shipping_line || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            {container.expected_pickup_time ? new Date(container.expected_pickup_time).toLocaleString() : "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              container.customs_status === "Pending" && "bg-orange-100 text-orange-700",
+                              container.customs_status === "Cleared" && "bg-green-100 text-green-700",
+                              container.customs_status === "Hold" && "bg-red-100 text-red-700"
+                            )}
+                          >
+                            {container.customs_status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={container.pod_priority === "High" ? "destructive" : "secondary"}>
+                            {container.pod_priority || "Normal"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <MapPin className="mr-2 h-4 w-4" />
+                                Pre-assign Location
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <AlertCircle className="mr-2 h-4 w-4" />
+                                Change Priority
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="export" className="mt-0">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Container ID</TableHead>
+                      <TableHead>Size/Type</TableHead>
+                      <TableHead>Vessel/Voyage</TableHead>
+                      <TableHead>Origin</TableHead>
+                      <TableHead>ETA</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredIncoming.map((container) => (
+                      <TableRow key={container.container_id} className="hover:bg-gray-50">
+                        <TableCell className="font-mono text-sm font-medium">
+                          <div className="flex items-center gap-2">
+                            {container.container_number}
+                            {container.hazmat_flag && <Flame className="h-4 w-4 text-red-600" />}
+                            {container.reefer_flag && <Snowflake className="h-4 w-4 text-cyan-600" />}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                            <div className="text-gray-600">{container.weight_mt} MT</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{container.vessel_id || "-"}</div>
+                            <div className="text-gray-600">{container.voyage_id || "-"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{container.shipping_line || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            {container.expected_pickup_time ? new Date(container.expected_pickup_time).toLocaleString() : "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              container.customs_status === "Pending" && "bg-orange-100 text-orange-700",
+                              container.customs_status === "Cleared" && "bg-green-100 text-green-700",
+                              container.customs_status === "Hold" && "bg-red-100 text-red-700"
+                            )}
+                          >
+                            {container.customs_status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={container.pod_priority === "High" ? "destructive" : "secondary"}>
+                            {container.pod_priority || "Normal"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Details
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="empties" className="mt-0">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Container ID</TableHead>
+                      <TableHead>Size/Type</TableHead>
+                      <TableHead>Vessel/Voyage</TableHead>
+                      <TableHead>Origin</TableHead>
+                      <TableHead>ETA</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredIncoming.map((container) => (
+                      <TableRow key={container.container_id} className="hover:bg-gray-50">
+                        <TableCell className="font-mono text-sm font-medium">
+                          <div className="flex items-center gap-2">
+                            {container.container_number}
+                            {container.hazmat_flag && <Flame className="h-4 w-4 text-red-600" />}
+                            {container.reefer_flag && <Snowflake className="h-4 w-4 text-cyan-600" />}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                            <div className="text-gray-600">{container.weight_mt} MT</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{container.vessel_id || "-"}</div>
+                            <div className="text-gray-600">{container.voyage_id || "-"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{container.shipping_line || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            {container.expected_pickup_time ? new Date(container.expected_pickup_time).toLocaleString() : "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              container.customs_status === "Pending" && "bg-orange-100 text-orange-700",
+                              container.customs_status === "Cleared" && "bg-green-100 text-green-700",
+                              container.customs_status === "Hold" && "bg-red-100 text-red-700"
+                            )}
+                          >
+                            {container.customs_status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={container.pod_priority === "High" ? "destructive" : "secondary"}>
+                            {container.pod_priority || "Normal"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Details
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+            </Tabs>
+          </TabsContent>
+
+          {/* Yard Inventory Tab */}
+          <TabsContent value="yard" className="mt-0">
+            {/* Search and Filters Row */}
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative flex-1 min-w-[250px]">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      placeholder="Search by container ID, Shipping Bill..."
+                      className="pl-9"
+                      value={containerIdFilter}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContainerIdFilter(e.target.value)}
+                    />
+                  </div>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Flow
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    ETA
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Plan Status
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Priority
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Source
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Columns
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Sub-tabs for Yard Inventory */}
+            <Tabs value={yardSubTab} onValueChange={setYardSubTab} className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="all">
+                  All ({filterContainers(inYardContainers, "all").length})
+                </TabsTrigger>
+                <TabsTrigger value="import">
+                  Import ({filterContainers(inYardContainers, "import").length})
+                </TabsTrigger>
+                <TabsTrigger value="export">
+                  Export ({filterContainers(inYardContainers, "export").length})
+                </TabsTrigger>
+                <TabsTrigger value="empties">
+                  Empties ({filterContainers(inYardContainers, "empties").length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="all" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Vessel/Voyage</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Dwell Time</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Last Move</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredYard.map((container) => (
                       <TableRow
                         key={container.container_id}
                         className="hover:bg-gray-50"
@@ -630,36 +957,281 @@ export function ContainersPage() {
                           </DropdownMenu>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Import, Export, Empties tabs for Yard - same structure */}
+              <TabsContent value="import" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Dwell Time</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredYard.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No containers found</TableCell></TableRow>
+                        ) : (
+                          filteredYard.map((container) => (
+                            <TableRow key={container.container_id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm font-medium">
+                                {container.container_number}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span className="font-mono text-sm">{container.current_location_id}</span>
+                              </TableCell>
+                              <TableCell className="text-sm">{container.dwell_time_days || 0} days</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{container.customs_status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="export" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Dwell Time</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredYard.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No containers found</TableCell></TableRow>
+                        ) : (
+                          filteredYard.map((container) => (
+                            <TableRow key={container.container_id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm font-medium">
+                                {container.container_number}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span className="font-mono text-sm">{container.current_location_id}</span>
+                              </TableCell>
+                              <TableCell className="text-sm">{container.dwell_time_days || 0} days</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{container.customs_status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="empties" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Dwell Time</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredYard.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No containers found</TableCell></TableRow>
+                        ) : (
+                          filteredYard.map((container) => (
+                            <TableRow key={container.container_id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm font-medium">
+                                {container.container_number}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span className="font-mono text-sm">{container.current_location_id}</span>
+                              </TableCell>
+                              <TableCell className="text-sm">{container.dwell_time_days || 0} days</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{container.customs_status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
-          {/* Outgoing Containers */}
-          <TabsContent value="outgoing" className="mt-6">
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Container ID</TableHead>
-                      <TableHead>Size/Type</TableHead>
-                      <TableHead>Vessel/Voyage</TableHead>
-                      <TableHead>Destination</TableHead>
-                      <TableHead>ETD</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {outgoingContainers.map((container) => (
-                      <TableRow
-                        key={container.container_id}
-                        className="hover:bg-gray-50"
-                      >
+          {/* Container Retrieval Tab */}
+          <TabsContent value="retrieval" className="mt-0">
+            {/* Search and Filters Row */}
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative flex-1 min-w-[250px]">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      placeholder="Search by container ID, Shipping Bill..."
+                      className="pl-9"
+                      value={containerIdFilter}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContainerIdFilter(e.target.value)}
+                    />
+                  </div>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Flow
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    ETA
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Plan Status
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Priority
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Source
+                  </Button>
+
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Columns
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Sub-tabs for Container Retrieval */}
+            <Tabs value={retrievalSubTab} onValueChange={setRetrievalSubTab} className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="all">
+                  All ({filterContainers(outgoingContainers, "all").length})
+                </TabsTrigger>
+                <TabsTrigger value="import">
+                  Import ({filterContainers(outgoingContainers, "import").length})
+                </TabsTrigger>
+                <TabsTrigger value="export">
+                  Export ({filterContainers(outgoingContainers, "export").length})
+                </TabsTrigger>
+                <TabsTrigger value="empties">
+                  Empties ({filterContainers(outgoingContainers, "empties").length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="all" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Vessel/Voyage</TableHead>
+                          <TableHead>Destination</TableHead>
+                          <TableHead>ETD</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRetrieval.map((container) => (
+                          <TableRow
+                            key={container.container_id}
+                            className="hover:bg-gray-50"
+                          >
                         <TableCell className="font-mono text-sm font-medium">
                           <div className="flex items-center gap-2">
                             {container.container_number}
@@ -731,12 +1303,191 @@ export function ContainersPage() {
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="import" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Destination</TableHead>
+                          <TableHead>ETD</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRetrieval.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No containers found</TableCell></TableRow>
+                        ) : (
+                          filteredRetrieval.map((container) => (
+                            <TableRow key={container.container_id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm font-medium">
+                                {container.container_number}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">{container.pod || "-"}</TableCell>
+                              <TableCell className="text-sm">
+                                {container.expected_delivery_time ? new Date(container.expected_delivery_time).toLocaleString() : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{container.customs_status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="export" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Destination</TableHead>
+                          <TableHead>ETD</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRetrieval.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No containers found</TableCell></TableRow>
+                        ) : (
+                          filteredRetrieval.map((container) => (
+                            <TableRow key={container.container_id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm font-medium">
+                                {container.container_number}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">{container.pod || "-"}</TableCell>
+                              <TableCell className="text-sm">
+                                {container.expected_delivery_time ? new Date(container.expected_delivery_time).toLocaleString() : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{container.customs_status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="empties" className="mt-0">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Container ID</TableHead>
+                          <TableHead>Size/Type</TableHead>
+                          <TableHead>Destination</TableHead>
+                          <TableHead>ETD</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRetrieval.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No containers found</TableCell></TableRow>
+                        ) : (
+                          filteredRetrieval.map((container) => (
+                            <TableRow key={container.container_id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm font-medium">
+                                {container.container_number}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">{container.size_teu === 1 ? "20' STD" : "40' HC"}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">{container.pod || "-"}</TableCell>
+                              <TableCell className="text-sm">
+                                {container.expected_delivery_time ? new Date(container.expected_delivery_time).toLocaleString() : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{container.customs_status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => { setSelectedContainerId(container.container_id); setDetailsModalOpen(true); }}>
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         </Tabs>
       </div>

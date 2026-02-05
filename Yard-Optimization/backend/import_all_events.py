@@ -7,8 +7,8 @@ Each event becomes a unique container entry in the database.
 import pandas as pd
 import re
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine
-from models import Container, Base
+from Database.database import SessionLocal, engine
+from Database.models import Container, Base
 from datetime import datetime
 import sys
 

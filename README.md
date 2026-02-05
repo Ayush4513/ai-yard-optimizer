@@ -126,9 +126,9 @@ bash run.sh
 
 **Or manually:**
 ```bash
-python -m src.main
+cd Yard-Optimization/backend && python -m Modules.main
 # Or
-uvicorn src.main:app --reload
+cd Yard-Optimization/backend && uvicorn Modules.main:app --reload
 ```
 
 8. **Test the API**
@@ -144,9 +144,11 @@ curl -X POST "http://localhost:8000/api/v1/rag/retrieve?query=stacking rules for
 
 ```
 ai-hackathon-2026-Team2/
-├── src/
-│   ├── __init__.py
-│   ├── config.py              # Configuration management
+├── Yard-Optimization/
+│   └── backend/
+│       └── Modules/
+│           ├── __init__.py
+│           ├── config.py              # Configuration management
 │   ├── main.py                # FastAPI application
 │   ├── database/
 │   │   ├── __init__.py
@@ -217,7 +219,7 @@ The system supports hybrid retrieval:
 
 Example:
 ```python
-from src.rag.retrieval_chain import retrieval_chain
+from Modules.rag.retrieval_chain import retrieval_chain
 
 results = retrieval_chain.hybrid_retrieve(
     query="stacking rules for Export containers",
@@ -233,16 +235,16 @@ results = retrieval_chain.hybrid_retrieve(
 python scripts/test_connections.py
 
 # Test Neo4j connection
-python -c "from src.database.neo4j_client import neo4j_client; neo4j_client.connect(); print('Neo4j connected!')"
+cd Yard-Optimization/backend && python -c "from Modules.database.neo4j_client import neo4j_client; neo4j_client.connect(); print('Neo4j connected!')"
 
 # Test ChromaDB
-python -c "from src.database.chroma_client import chroma_client; collections = chroma_client.initialize_collections(); print(f'Collections: {list(collections.keys())}')"
+cd Yard-Optimization/backend && python -c "from Modules.database.chroma_client import chroma_client; collections = chroma_client.initialize_collections(); print(f'Collections: {list(collections.keys())}')"
 
 # Test RAG retrieval
-python -c "from src.rag.retrieval_chain import HybridRetrievalChain; chain = HybridRetrievalChain(); results = chain.retrieve_from_chromadb('stacking rules for heavy containers'); print(f'Retrieved {len(results)} results')"
+cd Yard-Optimization/backend && python -c "from Modules.rag.retrieval_chain import HybridRetrievalChain; chain = HybridRetrievalChain(); results = chain.retrieve_from_chromadb('stacking rules for heavy containers'); print(f'Retrieved {len(results)} results')"
 
 # Check rules count
-python -c "from src.database.chroma_client import chroma_client; collection = chroma_client.get_or_create_collection('yard_rules'); print(f'Rules in ChromaDB: {collection.count()}')"
+cd Yard-Optimization/backend && python -c "from Modules.database.chroma_client import chroma_client; collection = chroma_client.get_or_create_collection('yard_rules'); print(f'Rules in ChromaDB: {collection.count()}')"
 ```
 
 ## 📊 Data Sources
@@ -377,7 +379,7 @@ python scripts/convert_rules_csv_to_json.py
 python scripts/ingest_rules.py
 
 # Start API
-python -m src.main
+cd Yard-Optimization/backend && python -m Modules.main
 ```
 
 ## 📊 API Endpoints
@@ -409,7 +411,7 @@ curl -X POST "http://localhost:8000/api/v1/rag/retrieve?query=stacking rules for
 
 ### Via Python
 ```python
-from src.rag.retrieval_chain import HybridRetrievalChain
+from Modules.rag.retrieval_chain import HybridRetrievalChain
 
 chain = HybridRetrievalChain(collection_name="yard_rules")
 results = chain.retrieve_from_chromadb(

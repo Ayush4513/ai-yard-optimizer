@@ -158,7 +158,7 @@ echo ✅ Setup complete!
 echo.
 echo Next steps:
 echo 1. Run the application: run.bat
-echo 2. Or manually: python -m src.main
+echo 2. Or manually: cd Yard-Optimization\backend ^&^& python -m Modules.main
 echo 3. Test connections: python scripts\test_connections.py
 echo 4. Access Neo4j Browser: http://localhost:7474
 echo 5. Access API docs: http://localhost:8000/docs

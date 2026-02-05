@@ -2,12 +2,12 @@
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add backend to path so Modules package is importable
+sys.path.insert(0, str(Path(__file__).parent.parent / "Yard-Optimization" / "backend"))
 
-from src.database.neo4j_client import neo4j_client
-from src.database.chroma_client import chroma_client
-from src.rag.retrieval_chain import HybridRetrievalChain
+from Modules.database.neo4j_client import neo4j_client
+from Modules.database.chroma_client import chroma_client
+from Modules.rag.retrieval_chain import HybridRetrievalChain
 import logging
 
 logging.basicConfig(level=logging.INFO)

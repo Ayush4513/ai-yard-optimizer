@@ -38,7 +38,7 @@ fi
 if [ -f "container_movement_dataset_v3 (3)(Container Movements).csv" ]; then
     echo "🔍 Checking historical data ingestion..."
     venv/bin/python -c "
-from src.database.chroma_client import chroma_client
+import sys; sys.path.insert(0, 'Yard-Optimization/backend'); from Modules.database.chroma_client import chroma_client
 collections = chroma_client.initialize_collections()
 count = collections['historical_patterns'].count()
 if count == 0:
@@ -55,7 +55,7 @@ fi
 
 # Check if ChromaDB has rules
 venv/bin/python -c "
-from src.database.chroma_client import chroma_client
+import sys; sys.path.insert(0, 'Yard-Optimization/backend'); from Modules.database.chroma_client import chroma_client
 collections = chroma_client.initialize_collections()
 count = collections['yard_rules'].count()
 if count == 0:
@@ -79,5 +79,5 @@ echo ""
 echo "Press Ctrl+C to stop"
 echo ""
 
-venv/bin/python -m src.main
+cd Yard-Optimization/backend && ../../venv/bin/python -m Modules.main
 

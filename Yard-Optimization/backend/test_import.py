@@ -196,8 +196,8 @@ def verify_database():
     Verify containers were imported correctly.
     """
     try:
-        from database import SessionLocal
-        from models import Container
+        from Database.database import SessionLocal
+        from Database.models import Container
 
         db = SessionLocal()
         containers = db.query(Container).all()

@@ -4,10 +4,10 @@ import sys
 from pathlib import Path
 import logging
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add backend to path so Modules package is importable
+sys.path.insert(0, str(Path(__file__).parent.parent / "Yard-Optimization" / "backend"))
 
-from src.database.chroma_client import chroma_client
+from Modules.database.chroma_client import chroma_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

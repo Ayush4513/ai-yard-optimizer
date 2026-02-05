@@ -37,7 +37,7 @@ if not exist "data\all_rules.json" (
 )
 
 REM Check if ChromaDB has rules and ingest if needed
-venv\Scripts\python.exe -c "from src.database.chroma_client import chroma_client; collections = chroma_client.initialize_collections(); count = collections['yard_rules'].count(); print(f'ChromaDB has {count} rules') if count > 0 else (print('No rules found. Ingesting...'), __import__('subprocess').run(['venv\\Scripts\\python.exe', 'scripts/ingest_rules.py']))" 2>nul || (
+venv\Scripts\python.exe -c "import sys, os; sys.path.insert(0, os.path.join('Yard-Optimization', 'backend')); from Modules.database.chroma_client import chroma_client; collections = chroma_client.initialize_collections(); count = collections['yard_rules'].count(); print(f'ChromaDB has {count} rules') if count > 0 else (print('No rules found. Ingesting...'), __import__('subprocess').run(['venv\\Scripts\\python.exe', 'scripts\\ingest_rules.py']))" 2>nul || (
     echo 📥 Ingesting rules into ChromaDB...
     venv\Scripts\python.exe scripts\ingest_rules.py
 )
@@ -45,7 +45,7 @@ venv\Scripts\python.exe -c "from src.database.chroma_client import chroma_client
 REM Check if historical data is ingested
 if exist "container_movement_dataset_v3 (3)(Container Movements).csv" (
     echo 🔍 Checking historical data ingestion...
-    venv\Scripts\python.exe -c "from src.database.chroma_client import chroma_client; collections = chroma_client.initialize_collections(); count = collections['historical_patterns'].count(); print(f'ChromaDB has {count} historical patterns') if count > 0 else (print('No patterns found. Ingesting...'), __import__('subprocess').run(['venv\\Scripts\\python.exe', 'scripts/ingest_historical_data.py']))" 2>nul || (
+    venv\Scripts\python.exe -c "import sys, os; sys.path.insert(0, os.path.join('Yard-Optimization', 'backend')); from Modules.database.chroma_client import chroma_client; collections = chroma_client.initialize_collections(); count = collections['historical_patterns'].count(); print(f'ChromaDB has {count} historical patterns') if count > 0 else (print('No patterns found. Ingesting...'), __import__('subprocess').run(['venv\\Scripts\\python.exe', 'scripts\\ingest_historical_data.py']))" 2>nul || (
         echo 📊 Ingesting historical data...
         venv\Scripts\python.exe scripts\ingest_historical_data.py
     )
@@ -61,5 +61,5 @@ echo.
 echo Press Ctrl+C to stop
 echo.
 
-venv\Scripts\python.exe -m src.main
+cd Yard-Optimization\backend && ..\..\venv\Scripts\python.exe -m Modules.main
 

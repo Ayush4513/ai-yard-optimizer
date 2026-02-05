@@ -3,9 +3,14 @@ Database Migration Script
 Adds new fields to existing containers table for Excel event data import.
 """
 
-from database import engine, Base
-from models import Container, YardLocation, Block, Yard
+import os
+from Database.database import engine, Base
+from Database.models import Container, YardLocation, Block, Yard
 import sqlite3
+
+# Build absolute path to the DB file in backend/
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "yard_optimization.db")
 
 def migrate_database():
     """
@@ -17,7 +22,7 @@ def migrate_database():
     print("=" * 60)
 
     # Get SQLite connection
-    conn = sqlite3.connect('yard_optimization.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Get existing columns

@@ -2,9 +2,9 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
-import models
-import schemas
-from database import engine, get_db
+from Database import models, schemas
+from Database.database import engine, get_db
+from Api.routes import router as extended_router
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -29,6 +29,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include extended API routes
+app.include_router(extended_router)
 
 
 # ============================================================================

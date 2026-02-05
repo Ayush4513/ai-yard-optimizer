@@ -2,8 +2,8 @@
 Seed script to populate the database with sample data for testing/demo
 Run this after starting the backend for the first time
 """
-from database import SessionLocal, Base, engine
-import models
+from Database.database import SessionLocal, Base, engine
+from Database import models
 from datetime import datetime, timedelta
 
 # Create all tables first

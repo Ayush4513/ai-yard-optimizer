@@ -1,13 +1,13 @@
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Card } from "@/app/components/ui/card";
-import { Badge } from "@/app/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { ScrollArea } from "@/app/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
 import { cn } from "@/app/components/ui/utils";
-import type { Block, YardLocation, AIRecommendation, ColorCodingMode, Container } from "@/app/types/yard-optimization";
-import { colorPalettes, getContainerById } from "@/app/utils/yard-optimization-data";
+import type { Block, YardLocation, AIRecommendation, ColorCodingMode, Container, OccupiedLocation } from "@/app/types/yard-optimization";
+import { colorPalettes } from "@/app/utils/yard-optimization-data";
 
 interface YardDetailViewProps {
   block: Block;
@@ -32,13 +32,32 @@ export function YardDetailView({
   hoveredLocation,
   onLocationHover,
 }: YardDetailViewProps) {
-  const baysToShow = 5;
+  const totalBays = block.bays || 20;
+  const totalRows = block.rows || 7;
+  const totalTiers = block.max_tier || 4;
+  const baysPerPage = 5;
+  const totalPages = Math.ceil(totalBays / baysPerPage);
+  const [currentPage, setCurrentPage] = useState(0);
+  const startBay = currentPage * baysPerPage + 1;
+  const endBay = Math.min(startBay + baysPerPage - 1, totalBays);
+
+  // Build a lookup map from sparse occupied_locations data
+  // Key: "bay-row-tier" -> OccupiedLocation
+  const occupiedMap = useMemo(() => {
+    const map = new Map<string, OccupiedLocation>();
+    (block.occupied_locations || []).forEach(loc => {
+      const key = `${loc.bay}-${loc.row}-${loc.tier}`;
+      map.set(key, loc);
+    });
+    return map;
+  }, [block.occupied_locations]);
+
+  // Helper to get occupied location or null
+  const getOccupiedLocation = (bay: number, row: number, tier: number): OccupiedLocation | null => {
+    return occupiedMap.get(`${bay}-${row}-${tier}`) || null;
+  };
 
   const getContainerColor = (container: Container, mode: ColorCodingMode): string => {
-    if (container.load_status === "Empty") {
-      return "white";
-    }
-
     const palette = colorPalettes[mode];
     let key: string;
 
@@ -62,31 +81,42 @@ export function YardDetailView({
     return palette[key as keyof typeof palette] || palette.default || "bg-green-600 border-green-700";
   };
 
-  const renderContainerSlot = (location: YardLocation) => {
-    const container = location.container_id ? getContainerById(location.container_id) : null;
-    const isRecommended = recommendations.some(r => r.location.location_id === location.location_id);
-    const recommendation = recommendations.find(r => r.location.location_id === location.location_id);
-    const isSelected = selectedLocation?.location_id === location.location_id;
-    const isHovered = hoveredLocation === location.location_id;
+  // Render a single slot (either occupied or empty)
+  const renderSlot = (bay: number, row: number, tier: number) => {
+    const occupiedLoc = getOccupiedLocation(bay, row, tier);
+    const isOccupied = !!occupiedLoc;
+    const container = occupiedLoc?.container || null;
+    const locationId = occupiedLoc?.location_id || `${block.block_id}-${String(bay).padStart(2, '0')}-${String(row).padStart(2, '0')}-${tier}`;
+
+    // Build a YardLocation object for callbacks (empty slot case)
+    const location: YardLocation = {
+      location_id: locationId,
+      bay,
+      row,
+      tier,
+      occupied: isOccupied,
+      status: occupiedLoc?.status,
+      container: container || undefined,
+    };
+
+    const isRecommended = recommendations.some(r => r.location.location_id === locationId);
+    const recommendation = recommendations.find(r => r.location.location_id === locationId);
+    const isSelected = selectedLocation?.location_id === locationId;
+    const isHovered = hoveredLocation === locationId;
 
     let colorClass = "bg-white border-gray-300";
     let opacity = "opacity-100";
     let pattern = "";
 
-    if (location.occupied && container) {
+    if (isOccupied && container) {
       colorClass = getContainerColor(container, colorCodingMode);
-      
+
       // Apply visual state overlays
-      if (location.status === "preplanned") {
+      if (occupiedLoc?.status === "preplanned") {
         opacity = "opacity-60";
         pattern = "polka-dots";
-      } else if (location.status === "planned_move") {
+      } else if (occupiedLoc?.status === "planned_move") {
         pattern = "diagonal-stripes";
-      }
-      
-      // Empty containers special case
-      if (container.load_status === "Empty") {
-        colorClass = "bg-white border-gray-400";
       }
     }
 
@@ -95,15 +125,15 @@ export function YardDetailView({
     }
 
     return (
-      <Tooltip key={location.location_id}>
+      <Tooltip key={locationId}>
         <TooltipTrigger asChild>
           <button
             className={cn(
               "relative h-10 w-full rounded border-2 transition-all",
               colorClass,
               opacity,
-              !location.occupied && "hover:border-blue-400 hover:scale-105 hover:shadow-lg",
-              location.occupied && "cursor-not-allowed",
+              !isOccupied && "hover:border-blue-400 hover:scale-105 hover:shadow-lg",
+              isOccupied && "cursor-not-allowed",
               isRecommended && "animate-pulse",
               isSelected && "ring-2 ring-purple-500",
               isHovered && "scale-105 shadow-lg",
@@ -124,10 +154,10 @@ export function YardDetailView({
                   }
                 : undefined
             }
-            onClick={() => !location.occupied && onLocationSelect(location)}
-            onMouseEnter={() => location.occupied && onLocationHover(location.location_id)}
+            onClick={() => !isOccupied && onLocationSelect(location)}
+            onMouseEnter={() => isOccupied && onLocationHover(locationId)}
             onMouseLeave={() => onLocationHover(null)}
-            disabled={location.occupied}
+            disabled={isOccupied}
           >
             {/* Recommendation Rank Badge */}
             {isRecommended && recommendation && (
@@ -137,21 +167,19 @@ export function YardDetailView({
             )}
 
             {/* Container Type Indicator */}
-            {location.occupied && container && (
+            {isOccupied && container && (
               <div className="absolute inset-0 z-10 flex items-center justify-center">
-                <span className={cn(
-                  "text-[11px] font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]",
-                  container.load_status === "Empty" ? "text-gray-500" : "text-white"
-                )}>
+                <span className="text-[11px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
                   {container.type === "import_container" && "I"}
                   {container.type === "export_container" && "E"}
+                  {container.type === "empty" && "Em"}
                 </span>
               </div>
             )}
           </button>
         </TooltipTrigger>
-        
-        {location.occupied && container && (
+
+        {isOccupied && container && (
           <TooltipContent className="max-w-xs">
             <div className="space-y-1">
               <div className="font-semibold">{container.container_number}</div>
@@ -184,9 +212,10 @@ export function YardDetailView({
     );
   };
 
+  // Generate grid programmatically - no longer depends on locations array
   const renderBay = (bayNumber: number) => {
-    const bayLocations = block.locations.filter(loc => loc.bay === bayNumber);
-    const rows = Array.from(new Set(bayLocations.map(loc => loc.row))).sort((a, b) => a - b);
+    // Generate all rows (1 to totalRows)
+    const rows = Array.from({ length: totalRows }, (_, i) => i + 1);
 
     return (
       <div key={bayNumber} className="mb-4">
@@ -194,23 +223,25 @@ export function YardDetailView({
         <div className="flex gap-2">
           {/* Tier Labels */}
           <div className="flex flex-col justify-around pr-1">
-            {[4, 3, 2, 1].map(tier => (
+            {Array.from({ length: totalTiers }, (_, i) => totalTiers - i).map(tier => (
               <div key={tier} className="flex h-10 w-6 items-center justify-center text-xs text-muted-foreground">
                 T{tier}
               </div>
             ))}
           </div>
 
-          {/* Grid of Slots */}
-          <div className="grid flex-1 grid-cols-7 gap-1">
+          {/* Grid of Slots - generated programmatically */}
+          <div
+            className="grid flex-1 gap-1"
+            style={{ gridTemplateColumns: `repeat(${totalRows}, minmax(0, 1fr))` }}
+          >
             {rows.map(row => (
               <div key={row} className="space-y-0.5">
-                {/* Slots (T4 to T1, top to bottom) */}
-                {[4, 3, 2, 1].map(tier => {
-                  const location = bayLocations.find(loc => loc.row === row && loc.tier === tier);
-                  return location ? renderContainerSlot(location) : <div key={tier} className="h-10" />;
-                })}
-                
+                {/* Slots (top tier to T1, top to bottom) */}
+                {Array.from({ length: totalTiers }, (_, i) => totalTiers - i).map(tier => (
+                  renderSlot(bayNumber, row, tier)
+                ))}
+
                 {/* Row Label */}
                 <div className="flex h-6 items-center justify-center text-xs text-muted-foreground">
                   R{row}
@@ -278,13 +309,39 @@ export function YardDetailView({
         </div>
       </Card>
 
+      {/* Bay Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between rounded-lg border bg-gray-50 px-4 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+            disabled={currentPage === 0}
+            className="gap-1"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Bays {startBay}–{endBay} of {totalBays}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={currentPage === totalPages - 1}
+            className="gap-1"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
       {/* Bay Visualization */}
       <ScrollArea className="h-[500px]">
         <div className="space-y-6">
-          {Array.from({ length: baysToShow }, (_, i) => i + 1).map(bayNumber => renderBay(bayNumber))}
-          <div className="py-4 text-center text-sm text-muted-foreground">
-            Showing {baysToShow} of 20 bays. Full visualization available in production.
-          </div>
+          {Array.from({ length: endBay - startBay + 1 }, (_, i) => startBay + i).map(bayNumber => renderBay(bayNumber))}
         </div>
       </ScrollArea>
 
@@ -323,13 +380,6 @@ export function YardDetailView({
           <div className="mb-2 text-xs font-semibold text-muted-foreground">Container Type</div>
           <div className="flex gap-4 text-xs">
             <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded border-2 border-gray-400 bg-white" />
-              <div>
-                <div className="font-medium">White outline</div>
-                <div className="text-muted-foreground">Empty container</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
               <div className="flex h-6 w-6 items-center justify-center rounded border-2 border-green-700 bg-green-600 text-xs font-bold text-white">I</div>
               <div>
                 <div className="font-medium">Letter "I"</div>
@@ -341,6 +391,13 @@ export function YardDetailView({
               <div>
                 <div className="font-medium">Letter "E"</div>
                 <div className="text-muted-foreground">Export container</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded border-2 border-gray-600 bg-gray-500 text-xs font-bold text-white">Em</div>
+              <div>
+                <div className="font-medium">Letter "Em"</div>
+                <div className="text-muted-foreground">Empty container</div>
               </div>
             </div>
           </div>

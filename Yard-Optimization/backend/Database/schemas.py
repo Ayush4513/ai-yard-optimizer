@@ -240,10 +240,22 @@ class BlockBase(BaseModel):
     block_name: str
     yard_name: str
     block_type: Literal["General", "Reefer", "Hazmat", "Empty", "OOG"]
-    position_x: float
-    position_y: float
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
     total_slots: int
     occupied_slots: int = 0
+    # Detail fields from DB
+    yard_id: Optional[str] = None
+    yard_category: Optional[str] = None
+    block_number: Optional[int] = None
+    bays: Optional[int] = None
+    rows: Optional[int] = None
+    max_tier: Optional[int] = None
+    reefer_plugs: Optional[int] = None
+    hazmat_certified: Optional[bool] = None
+    empty_storage: Optional[bool] = None
+    primary_use: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class BlockCreate(BlockBase):
@@ -254,6 +266,24 @@ class BlockCreate(BlockBase):
 class Block(BlockBase):
     """Full block schema"""
     block_id: str
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# YARD SCHEMAS
+# ============================================================================
+
+class YardBase(BaseModel):
+    """Base yard schema"""
+    yard_name: str
+    yard_type: Literal["Sea-Side", "Land-Side", "OOG"]
+
+
+class Yard(YardBase):
+    """Full yard schema with ID"""
+    yard_id: str
 
     class Config:
         from_attributes = True

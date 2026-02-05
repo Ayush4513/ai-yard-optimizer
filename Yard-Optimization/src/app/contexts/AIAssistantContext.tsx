@@ -151,9 +151,11 @@ async function getContextualResponse(
   // USE CASE 1: Search by Container ID, Shipping Line, or Port of Delivery
   if (lowerMessage.includes("search") || lowerMessage.includes("find") || lowerMessage.includes("show me") || lowerMessage.includes("get") || lowerMessage.includes("where")) {
     try {
-      // Get all containers and locations
-      const containers = await containerAPI.getAll();
-      const locations = await locationAPI.getAll();
+      // Get containers and locations with pagination (fetch enough for search)
+      const containersResp = await containerAPI.getAll({ limit: 10000 });
+      const locationsResp = await locationAPI.getAll({ limit: 5000 });
+      const containers = containersResp.data;
+      const locations = locationsResp.data;
 
       // Extract container ID pattern (e.g., CNT-001, MSCU1234567)
       const containerIdMatch = userMessage.match(/[A-Z]{3,4}[-\s]?\d{3,7}/i);
@@ -469,7 +471,8 @@ async function getContextualResponse(
 
   if (lowerMessage.includes("compliance")) {
     try {
-      const containers = await containerAPI.getAll();
+      const containersResp = await containerAPI.getAll({ limit: 10000 });
+      const containers = containersResp.data;
       const cleared = containers.filter((c: any) => c.customs_status === 'Cleared').length;
       const pending = containers.filter((c: any) => c.customs_status === 'Pending').length;
       const hold = containers.filter((c: any) => c.customs_status === 'Hold').length;

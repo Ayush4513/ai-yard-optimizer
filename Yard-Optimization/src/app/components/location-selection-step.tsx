@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ArrowLeft,
   Save,
@@ -9,6 +9,7 @@ import {
   Clock,
   AlertTriangle,
   MapIcon,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/app/components/ui/card";
@@ -18,16 +19,14 @@ import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
 import type {
   Container,
+  Yard,
   YardLocation,
   Block,
   AIRecommendation,
   ColorCodingMode,
 } from "@/app/types/yard-optimization";
-import {
-  getAllYards,
-  getBlockById,
-} from "@/app/utils/yard-optimization-data";
 import { validateLocation, generateAIRecommendations } from "@/app/utils/yard-validation";
+import { yardAPI, blockAPI } from "@/services/api";
 import { YardOverview } from "@/app/components/yard-overview";
 import { YardDetailView } from "@/app/components/yard-detail-view";
 import { MetricsPanel } from "@/app/components/metrics-panel";
@@ -41,29 +40,67 @@ interface LocationSelectionStepProps {
 export function LocationSelectionStep({ container, onBack, onConfirm }: LocationSelectionStepProps) {
   const [selectedLocation, setSelectedLocation] = useState<YardLocation | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [recommendations] = useState<AIRecommendation[]>(() => generateAIRecommendations(container));
+  const [recommendations] = useState<AIRecommendation[]>([]);
   const [viewMode, setViewMode] = useState<"overview" | "detail">("overview");
   const [detailBlock, setDetailBlock] = useState<Block | null>(null);
   const [colorCodingMode, setColorCodingMode] = useState<ColorCodingMode>("shipping_line");
   const [hoveredLocation, setHoveredLocation] = useState<string | null>(null);
-  
-  const allYards = getAllYards();
-  const seaSideYards = allYards.filter(y => y.yard_type === "Sea-Side");
-  const landSideYards = allYards.filter(y => y.yard_type === "Land-Side");
-  const oogYards = allYards.filter(y => y.yard_type === "OOG");
+
+  // Dynamic data from API
+  const [seaSideYards, setSeaSideYards] = useState<Yard[]>([]);
+  const [landSideYards, setLandSideYards] = useState<Yard[]>([]);
+  const [oogYards, setOogYards] = useState<Yard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  useEffect(() => {
+    async function fetchYardData() {
+      try {
+        setLoading(true);
+        const overview = await yardAPI.getOverview();
+        setSeaSideYards(overview.sea_side);
+        setLandSideYards(overview.land_side);
+        setOogYards(overview.oog);
+      } catch (err) {
+        console.error("Yard overview fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchYardData();
+  }, []);
 
   const handleLocationSelect = (location: YardLocation) => {
-    const error = validateLocation(container, location);
-    
+    const error = validateLocation(
+      container,
+      location,
+      detailBlock?.locations,
+      detailBlock ?? undefined
+    );
+
     if (error) {
       setValidationError(error.message);
       toast.error(error.message);
       return;
     }
-    
+
     setSelectedLocation(location);
     setValidationError(null);
     toast.success("Location validated successfully!");
+  };
+
+  const handleBlockClick = async (block: Block) => {
+    try {
+      setLoadingDetail(true);
+      const blockDetail = await blockAPI.getDetails(block.block_id);
+      setDetailBlock(blockDetail);
+      setViewMode("detail");
+    } catch (err) {
+      toast.error("Failed to load block details");
+      console.error("Block detail fetch error:", err);
+    } finally {
+      setLoadingDetail(false);
+    }
   };
 
   const handleConfirmSave = () => {
@@ -268,15 +305,20 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
               </div>
             </CardHeader>
             <CardContent>
-              {viewMode === "overview" ? (
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : loadingDetail ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : viewMode === "overview" ? (
                 <YardOverview
                   seaSideYards={seaSideYards}
                   landSideYards={landSideYards}
                   oogYards={oogYards}
-                  onBlockClick={(block) => {
-                    setDetailBlock(block);
-                    setViewMode("detail");
-                  }}
+                  onBlockClick={handleBlockClick}
                   selectedLocation={selectedLocation}
                   recommendations={recommendations}
                 />

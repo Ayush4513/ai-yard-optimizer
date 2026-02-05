@@ -21,14 +21,14 @@ export function DatabaseViewer() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [containersData, locationsData, statsData] = await Promise.all([
-        containerAPI.getAll(),
-        locationAPI.getAll(),
+      const [containersResp, locationsResp, statsData] = await Promise.all([
+        containerAPI.getAll({ limit: 5000 }),
+        locationAPI.getAll({ limit: 5000 }),
         statsAPI.getYardStats(),
       ]);
 
-      setContainers(containersData);
-      setLocations(locationsData);
+      setContainers(containersResp.data);
+      setLocations(locationsResp.data);
       setStats(statsData);
     } catch (error) {
       console.error("Failed to load data:", error);

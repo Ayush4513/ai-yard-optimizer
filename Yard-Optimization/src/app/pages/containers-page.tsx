@@ -251,9 +251,10 @@ export function ContainersPage() {
   const loadContainers = async () => {
     try {
       setLoading(true);
-      const response = await containerAPI.getAll();
-      setAllContainers(response);
-      console.log("✅ Loaded containers from database:", response);
+      // Load up to 10,000 containers to see real data
+      const response = await containerAPI.getAll({ limit: 10000 });
+      setAllContainers(response.data);
+      console.log("✅ Loaded containers from database:", response.data.length, "of", response.pagination.total);
     } catch (error) {
       console.error("❌ Failed to load containers:", error);
       toast.error("Failed to load containers from database");

@@ -1,8 +1,24 @@
 import axios from 'axios';
-import type { Container, YardLocation, AIRecommendation } from '../app/types/yard-optimization';
+import type { Container, YardLocation, AIRecommendation, Yard, Block, YardOverviewResponse } from '../app/types/yard-optimization';
 
 // API Base URL - update this if your backend runs on a different port
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+// ============================================================================
+// PAGINATION TYPES
+// ============================================================================
+
+export interface PaginationInfo {
+  skip: number;
+  limit: number;
+  total: number;
+  has_more: boolean;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: PaginationInfo;
+}
 
 // Create axios instance with default config
 const api = axios.create({
@@ -50,10 +66,12 @@ api.interceptors.response.use(
 
 export const containerAPI = {
   /**
-   * Get all containers
+   * Get containers with pagination
+   * @param skip - Number of records to skip (default: 0)
+   * @param limit - Maximum records to return (default: 100, max: 1000)
    */
-  getAll: async () => {
-    const response = await api.get<Container[]>('/containers');
+  getAll: async (params?: { skip?: number; limit?: number }): Promise<PaginatedResponse<Container>> => {
+    const response = await api.get<PaginatedResponse<Container>>('/containers', { params });
     return response.data;
   },
 
@@ -62,6 +80,25 @@ export const containerAPI = {
    */
   getById: async (containerId: string) => {
     const response = await api.get<Container>(`/containers/${containerId}`);
+    return response.data;
+  },
+
+  /**
+   * Search containers with filters and pagination
+   */
+  search: async (params?: {
+    q?: string;
+    container_number?: string;
+    shipping_line?: string;
+    pod?: string;
+    customs_status?: string;
+    container_type?: string;
+    block_id?: string;
+    has_location?: boolean;
+    skip?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<Container>> => {
+    const response = await api.get<PaginatedResponse<Container>>('/containers/search', { params });
     return response.data;
   },
 
@@ -97,14 +134,18 @@ export const containerAPI = {
 
 export const locationAPI = {
   /**
-   * Get all yard locations with optional filters
+   * Get yard locations with optional filters and pagination
+   * @param skip - Number of records to skip (default: 0)
+   * @param limit - Maximum records to return (default: 500, max: 2000)
    */
   getAll: async (params?: {
     yard_name?: string;
     block_id?: string;
     occupied?: boolean;
-  }) => {
-    const response = await api.get<YardLocation[]>('/locations', { params });
+    skip?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<YardLocation>> => {
+    const response = await api.get<PaginatedResponse<YardLocation>>('/locations', { params });
     return response.data;
   },
 
@@ -133,9 +174,9 @@ export const locationAPI = {
   },
 
   /**
-   * Get available locations
+   * Get available locations with pagination
    */
-  getAvailable: async (params?: { yard_name?: string; block_id?: string }) => {
+  getAvailable: async (params?: { yard_name?: string; block_id?: string; skip?: number; limit?: number }) => {
     return locationAPI.getAll({ ...params, occupied: false });
   },
 };
@@ -206,6 +247,104 @@ export const statsAPI = {
    */
   getContainerStats: async () => {
     const response = await api.get<ContainerStats>('/stats/containers');
+    return response.data;
+  },
+};
+
+
+// ============================================================================
+// YARD API
+// ============================================================================
+
+export const yardAPI = {
+  /**
+   * Get full yard overview hierarchy (yards grouped by type with blocks and occupancy)
+   */
+  getOverview: async (): Promise<YardOverviewResponse> => {
+    const response = await api.get<YardOverviewResponse>('/yards/overview');
+    return response.data;
+  },
+
+  /**
+   * Get all yards
+   */
+  getAll: async (): Promise<Yard[]> => {
+    const response = await api.get<Yard[]>('/yards');
+    return response.data;
+  },
+
+  /**
+   * Get yard occupancy stats
+   */
+  getOccupancy: async (yardName: string) => {
+    const response = await api.get(`/yards/${yardName}/occupancy`);
+    return response.data;
+  },
+};
+
+
+// ============================================================================
+// BLOCK API
+// ============================================================================
+
+export const blockAPI = {
+  /**
+   * Get all blocks
+   */
+  getAll: async (): Promise<Block[]> => {
+    const response = await api.get<Block[]>('/blocks');
+    return response.data;
+  },
+
+  /**
+   * Get block with all locations and embedded container data (for detail view)
+   */
+  getDetails: async (blockId: string): Promise<Block> => {
+    const response = await api.get<Block>(`/blocks/${blockId}/details`);
+    return response.data;
+  },
+
+  /**
+   * Get containers in a block
+   */
+  getContainers: async (blockId: string) => {
+    const response = await api.get(`/blocks/${blockId}/containers`);
+    return response.data;
+  },
+};
+
+
+// ============================================================================
+// SYNC API
+// ============================================================================
+
+export interface SyncResult {
+  message: string;
+  placed_count: number;
+  skipped_count: number;
+  error_count: number;
+  placed: Array<{
+    container_number: string;
+    container_id: string;
+    location_id: string;
+    block_id: string;
+    bay: number;
+    row: number;
+    tier: number;
+    event_type: string;
+  }>;
+  skipped: Array<{ container_number: string; reason: string }>;
+  errors: Array<{ container_number: string; reason: string }>;
+}
+
+export const syncAPI = {
+  /**
+   * Sync container placements from event history.
+   * Finds latest event per container_number and places those
+   * with valid block_id/bay/row/tier into YardLocations.
+   */
+  placeContainers: async (): Promise<SyncResult> => {
+    const response = await api.post<SyncResult>('/sync/place-containers');
     return response.data;
   },
 };

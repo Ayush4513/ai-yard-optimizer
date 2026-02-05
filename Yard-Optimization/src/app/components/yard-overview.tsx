@@ -39,7 +39,9 @@ export function YardOverview({
   };
 
   const renderBlock = (block: Block, yardType: "sea" | "land" | "oog") => {
-    const utilization = Math.round((block.occupied_slots / block.total_slots) * 100);
+    const utilization = block.total_slots > 0
+      ? Math.round((block.occupied_slots / block.total_slots) * 100)
+      : 0;
     const Icon = getBlockIcon(block.block_type);
     const blockColor = colorPalettes.block_types[block.block_type];
     const isRecommended = recommendations.some(r => r.location.block_id === block.block_id);
@@ -78,33 +80,45 @@ export function YardOverview({
     );
   };
 
+  const getBadgeText = (yards: Yard[]) => {
+    if (yards.length === 0) return "";
+    if (yards.length === 1) return yards[0].yard_name;
+    return `${yards[0].yard_name}-${yards[yards.length - 1].yard_name}`;
+  };
+
   const renderYardSection = (
     yards: Yard[],
     title: string,
     Icon: any,
     iconColor: string,
-    borderColor: string,
-    badgeText: string
-  ) => (
-    <div className="mb-6">
-      <div className="mb-4 flex items-center gap-2">
-        <Icon className={cn("h-5 w-5", iconColor)} />
-        <h3 className="font-semibold">{title}</h3>
-        <Badge variant="secondary" className="ml-auto">{badgeText}</Badge>
-      </div>
-      
-      <div className="grid grid-cols-5 gap-4">
-        {yards.map((yard) => (
-          <div key={yard.yard_id} className={cn("rounded-lg border-2 p-3", borderColor)}>
-            <div className="mb-2 px-2 text-sm font-semibold">{yard.yard_name}</div>
-            <div className="space-y-1">
-              {yard.blocks.map((block) => renderBlock(block, yard.yard_type === "Sea-Side" ? "sea" : yard.yard_type === "Land-Side" ? "land" : "oog"))}
+    borderColor: string
+  ) => {
+    if (yards.length === 0) return null;
+
+    return (
+      <div className="mb-6">
+        <div className="mb-4 flex items-center gap-2">
+          <Icon className={cn("h-5 w-5", iconColor)} />
+          <h3 className="font-semibold">{title}</h3>
+          <Badge variant="secondary" className="ml-auto">{getBadgeText(yards)}</Badge>
+        </div>
+
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: `repeat(${Math.min(yards.length, 7)}, minmax(0, 1fr))` }}
+        >
+          {yards.map((yard) => (
+            <div key={yard.yard_id} className={cn("rounded-lg border-2 p-3", borderColor)}>
+              <div className="mb-2 px-2 text-sm font-semibold">{yard.yard_name}</div>
+              <div className="space-y-1">
+                {yard.blocks.map((block) => renderBlock(block, yard.yard_type === "Sea-Side" ? "sea" : yard.yard_type === "Land-Side" ? "land" : "oog"))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -114,8 +128,7 @@ export function YardOverview({
         "Sea-Side Yards",
         Ship,
         "text-blue-600",
-        "border-blue-200",
-        "SS1-SS5"
+        "border-blue-200"
       )}
 
       {/* Land-Side Yards */}
@@ -124,8 +137,7 @@ export function YardOverview({
         "Land-Side Yards",
         Truck,
         "text-green-600",
-        "border-green-200",
-        "LS1-LS4"
+        "border-green-200"
       )}
 
       {/* OOG Yard */}
@@ -134,8 +146,7 @@ export function YardOverview({
         "OOG (Out of Gauge) Yard",
         Package,
         "text-gray-600",
-        "border-gray-200",
-        "OOG"
+        "border-gray-200"
       )}
     </div>
   );

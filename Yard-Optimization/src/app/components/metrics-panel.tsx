@@ -2,16 +2,15 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Progress } from "@/app/components/ui/progress";
 import { Badge } from "@/app/components/ui/badge";
-import type { YardLocation, AIRecommendation } from "@/app/types/yard-optimization";
-import { getBlockById } from "@/app/utils/yard-optimization-data";
+import type { YardLocation, AIRecommendation, Block } from "@/app/types/yard-optimization";
 
 interface MetricsPanelProps {
   location: YardLocation;
   recommendation?: AIRecommendation;
+  block?: Block;
 }
 
-export function MetricsPanel({ location, recommendation }: MetricsPanelProps) {
-  const block = getBlockById(location.block_id);
+export function MetricsPanel({ location, recommendation, block }: MetricsPanelProps) {
 
   if (!recommendation) {
     // Show basic location info if not a recommended location

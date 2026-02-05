@@ -60,14 +60,25 @@ export interface Container {
 
 export interface YardLocation {
   location_id: string;
-  yard_name: string;
-  block_id: string;
+  yard_name?: string;
+  block_id?: string;
   bay: number;
   row: number;
   tier: number;
   occupied: boolean;
   container_id?: string;
   status?: "actual" | "preplanned" | "planned_move";
+  container?: Container;
+}
+
+// Sparse location data returned by block details API (only occupied slots)
+export interface OccupiedLocation {
+  location_id: string;
+  bay: number;
+  row: number;
+  tier: number;
+  status?: "actual" | "preplanned" | "planned_move";
+  container?: Container;
 }
 
 export interface Block {
@@ -75,10 +86,19 @@ export interface Block {
   yard_name: string;
   block_name: string;
   block_type: "General" | "Reefer" | "Hazmat" | "Empty" | "OOG";
-  position: { x: number; y: number };
+  position?: { x: number; y: number };
   total_slots: number;
   occupied_slots: number;
-  locations: YardLocation[];
+  // DB detail fields
+  bays?: number;
+  rows?: number;
+  max_tier?: number;
+  reefer_plugs?: number;
+  hazmat_certified?: boolean;
+  empty_storage?: boolean;
+  primary_use?: string;
+  // Sparse data: only occupied locations (from details API)
+  occupied_locations?: OccupiedLocation[];
 }
 
 export interface Yard {
@@ -86,6 +106,12 @@ export interface Yard {
   yard_name: string;
   yard_type: "Sea-Side" | "Land-Side" | "OOG";
   blocks: Block[];
+}
+
+export interface YardOverviewResponse {
+  sea_side: Yard[];
+  land_side: Yard[];
+  oog: Yard[];
 }
 
 export interface AIRecommendation {

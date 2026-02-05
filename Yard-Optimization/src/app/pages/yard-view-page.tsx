@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Package,
   ArrowLeft,
@@ -13,6 +13,8 @@ import {
   MapIcon,
   Snowflake,
   Box,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/app/components/ui/card";
@@ -34,14 +36,9 @@ import type {
   ColorCodingMode,
 } from "@/app/types/yard-optimization";
 
-import {
-  getAllYards,
-  getContainerById,
-  getBlockById,
-  colorPalettes,
-} from "@/app/utils/yard-optimization-data";
-
+import { colorPalettes } from "@/app/utils/yard-optimization-data";
 import { validateLocation, generateAIRecommendations } from "@/app/utils/yard-validation";
+import { yardAPI, blockAPI, syncAPI } from "@/services/api";
 
 import { YardOverview } from "@/app/components/yard-overview";
 import { YardDetailView } from "@/app/components/yard-detail-view";
@@ -73,26 +70,67 @@ export function YardViewPage() {
   const [currentContainer] = useState<Container>(DEMO_CONTAINER);
   const [selectedLocation, setSelectedLocation] = useState<YardLocation | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [recommendations] = useState<AIRecommendation[]>(() => generateAIRecommendations(DEMO_CONTAINER));
+  const [recommendations] = useState<AIRecommendation[]>([]);
   const [viewMode, setViewMode] = useState<"overview" | "detail">("overview");
   const [detailBlock, setDetailBlock] = useState<Block | null>(null);
   const [colorCodingMode, setColorCodingMode] = useState<ColorCodingMode>("shipping_line");
   const [hoveredLocation, setHoveredLocation] = useState<string | null>(null);
-  
-  const allYards = getAllYards();
-  const seaSideYards = allYards.filter(y => y.yard_type === "Sea-Side");
-  const landSideYards = allYards.filter(y => y.yard_type === "Land-Side");
-  const oogYards = allYards.filter(y => y.yard_type === "OOG");
+
+  // Dynamic data from API
+  const [seaSideYards, setSeaSideYards] = useState<Yard[]>([]);
+  const [landSideYards, setLandSideYards] = useState<Yard[]>([]);
+  const [oogYards, setOogYards] = useState<Yard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchYardData() {
+      try {
+        setLoading(true);
+        setError(null);
+        const overview = await yardAPI.getOverview();
+        setSeaSideYards(overview.sea_side);
+        setLandSideYards(overview.land_side);
+        setOogYards(overview.oog);
+      } catch (err) {
+        setError("Failed to load yard data. Please check if the backend is running on port 8000.");
+        console.error("Yard overview fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchYardData();
+  }, []);
+
+  const handleBlockClick = async (block: Block) => {
+    try {
+      setLoadingDetail(true);
+      const blockDetail = await blockAPI.getDetails(block.block_id);
+      setDetailBlock(blockDetail);
+      setViewMode("detail");
+    } catch (err) {
+      toast.error("Failed to load block details");
+      console.error("Block detail fetch error:", err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   const handleLocationSelect = (location: YardLocation) => {
-    const error = validateLocation(currentContainer, location);
-    
+    const error = validateLocation(
+      currentContainer,
+      location,
+      detailBlock?.locations,
+      detailBlock ?? undefined
+    );
+
     if (error) {
       setValidationError(error.message);
       toast.error(error.message);
       return;
     }
-    
+
     setSelectedLocation(location);
     setValidationError(null);
     toast.success("Location validated successfully!");
@@ -100,7 +138,7 @@ export function YardViewPage() {
 
   const handleConfirmSave = () => {
     if (!selectedLocation) return;
-    
+
     toast.success(`Container ${currentContainer.container_number} successfully assigned to ${selectedLocation.location_id}`);
     // Reset for next container
     setCurrentStep("entry");
@@ -112,22 +150,88 @@ export function YardViewPage() {
     handleLocationSelect(recommendation.location);
   };
 
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncContainers = async () => {
+    try {
+      setSyncing(true);
+      const result = await syncAPI.placeContainers();
+      toast.success(`Sync complete: ${result.placed_count} containers placed, ${result.skipped_count} skipped`);
+      // Refresh yard data
+      const overview = await yardAPI.getOverview();
+      setSeaSideYards(overview.sea_side);
+      setLandSideYards(overview.land_side);
+      setOogYards(overview.oog);
+      // If detail view is open, refresh it too
+      if (detailBlock) {
+        const refreshed = await blockAPI.getDetails(detailBlock.block_id);
+        setDetailBlock(refreshed);
+      }
+    } catch (err) {
+      toast.error("Failed to sync container placements");
+      console.error("Sync error:", err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-lg text-muted-foreground">Loading yard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Connection Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-gray-50">
         {/* Full Width Yard Map */}
         <div className="h-screen">
           <Card className="h-full rounded-none border-x-0 border-t-0">
+            {/* Sync Header */}
+            <div className="flex items-center justify-between border-b px-4 py-2">
+              <h2 className="text-lg font-semibold">Yard Overview — Digital Twin</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncContainers}
+                disabled={syncing}
+                className="gap-2"
+              >
+                <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
+                {syncing ? "Syncing..." : "Sync Containers"}
+              </Button>
+            </div>
             <CardContent className="h-full p-4">
-              {viewMode === "overview" ? (
+              {loadingDetail ? (
+                <div className="flex h-full items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                    <p className="text-lg text-muted-foreground">Loading block details...</p>
+                  </div>
+                </div>
+              ) : viewMode === "overview" ? (
                 <YardOverview
                   seaSideYards={seaSideYards}
                   landSideYards={landSideYards}
                   oogYards={oogYards}
-                  onBlockClick={(block) => {
-                    setDetailBlock(block);
-                    setViewMode("detail");
-                  }}
+                  onBlockClick={handleBlockClick}
                   selectedLocation={selectedLocation}
                   recommendations={recommendations}
                 />
@@ -156,5 +260,3 @@ export function YardViewPage() {
     </TooltipProvider>
   );
 }
-
-// Continue in next file...

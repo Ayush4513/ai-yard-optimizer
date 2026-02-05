@@ -7,7 +7,9 @@ import {
   AlertTriangle,
   Snowflake,
   MapIcon,
+  Sparkles,
 } from "lucide-react";
+import { useAIAssistant } from "@/app/contexts/AIAssistantContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -19,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/app/components/ui/ta
 import { toast } from "sonner";
 import type { Container } from "@/app/types/yard-optimization";
 import { containerAPI } from "@/services/api";
+import { InspectModeTooltip } from "@/app/components/inspect-mode-tooltip";
 
 interface ContainerEntryFormProps {
   onSubmit: (container: Container) => void;
@@ -29,6 +32,9 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
   const [hazmatEnabled, setHazmatEnabled] = useState(false);
   const [reeferEnabled, setReeferEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAutoFilled, setIsAutoFilled] = useState(false);
+
+  const { extractedContainerData, clearExtractedData } = useAIAssistant();
 
   const { register, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
@@ -70,6 +76,46 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
   const reeferFlag = watch("reefer_flag");
   const weightMt = watch("weight_mt");
 
+  // Auto-fill form from extracted data
+  useEffect(() => {
+    if (extractedContainerData && !isAutoFilled) {
+      // Populate all fields
+      if (extractedContainerData.container_number) setValue("container_number", extractedContainerData.container_number);
+      if (extractedContainerData.iso_code) setValue("iso_code", extractedContainerData.iso_code);
+      if (extractedContainerData.size_teu) setValue("size_teu", extractedContainerData.size_teu);
+      if (extractedContainerData.container_type) setValue("container_type", extractedContainerData.container_type);
+      if (extractedContainerData.load_status) setValue("load_status", extractedContainerData.load_status);
+      if (extractedContainerData.type) setValue("type", extractedContainerData.type);
+      if (extractedContainerData.customs_status) setValue("customs_status", extractedContainerData.customs_status);
+      if (extractedContainerData.weight_mt) setValue("weight_mt", extractedContainerData.weight_mt);
+      if (extractedContainerData.seal_number) setValue("seal_number", extractedContainerData.seal_number);
+      if (extractedContainerData.cargo_description) setValue("cargo_description", extractedContainerData.cargo_description);
+      if (extractedContainerData.shipping_line) setValue("shipping_line", extractedContainerData.shipping_line);
+      if (extractedContainerData.vessel_id) setValue("vessel_id", extractedContainerData.vessel_id);
+      if (extractedContainerData.voyage_id) setValue("voyage_id", extractedContainerData.voyage_id);
+      if (extractedContainerData.pod) setValue("pod", extractedContainerData.pod);
+      if (extractedContainerData.gate_in_time) setValue("gate_in_time", extractedContainerData.gate_in_time);
+
+      // Set flags
+      if (extractedContainerData.hazmat_flag !== undefined) {
+        setValue("hazmat_flag", extractedContainerData.hazmat_flag);
+        setHazmatEnabled(extractedContainerData.hazmat_flag);
+      }
+      if (extractedContainerData.reefer_flag !== undefined) {
+        setValue("reefer_flag", extractedContainerData.reefer_flag);
+        setReeferEnabled(extractedContainerData.reefer_flag);
+      }
+
+      setIsAutoFilled(true);
+      toast.success("Form auto-filled from document!", {
+        description: "All container details have been populated. Review and submit."
+      });
+
+      // Clear extracted data after use
+      clearExtractedData();
+    }
+  }, [extractedContainerData, isAutoFilled, setValue, clearExtractedData]);
+
   // Auto-enable tabs based on container type
   useEffect(() => {
     if (containerType === "Reefer") {
@@ -78,7 +124,7 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
     } else if (containerType !== "Reefer" && reeferEnabled && !reeferFlag) {
       setReeferEnabled(false);
     }
-    
+
     if (containerType === "Hazardous") {
       setHazmatEnabled(true);
       setValue("hazmat_flag", true);
@@ -209,6 +255,23 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
         </div>
       </CardHeader>
       <CardContent>
+        {/* Auto-fill success banner */}
+        {isAutoFilled && (
+          <div className="mb-4 rounded-lg bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-blue-600">
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-purple-900">AI Auto-Fill Complete!</h4>
+                <p className="text-sm text-purple-700">
+                  All fields have been populated from your document. Review the details below and make any adjustments if needed.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit(onFormSubmit)}>
           <Tabs defaultValue="basic">
             <TabsList className="grid w-full grid-cols-5">
@@ -250,19 +313,34 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="container_number">Container Number *</Label>
-                    <Input
-                      id="container_number"
-                      placeholder="MSCU1234567"
-                      {...register("container_number", { required: true })}
-                    />
+                    <InspectModeTooltip
+                      fieldName="Container Number"
+                      description="Unique identifier for the shipping container. This is the most important field and must be unique across all containers in the system."
+                      example="MSCU1234567, MAEU9876543"
+                      required={true}
+                      validation="Typically 11 characters: 4 letters (owner code) + 6 digits + 1 check digit"
+                    >
+                      <Input
+                        id="container_number"
+                        placeholder="MSCU1234567"
+                        {...register("container_number", { required: true })}
+                      />
+                    </InspectModeTooltip>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="iso_code">ISO Code</Label>
-                    <Input
-                      id="iso_code"
-                      placeholder="42G1"
-                      {...register("iso_code")}
-                    />
+                    <InspectModeTooltip
+                      fieldName="ISO Code"
+                      description="International standard code that identifies the container's size and type according to ISO 6346 standards."
+                      example="42G1 (40ft general purpose)"
+                      validation="4 characters: 2 digits + 1 letter + 1 digit"
+                    >
+                      <Input
+                        id="iso_code"
+                        placeholder="42G1"
+                        {...register("iso_code")}
+                      />
+                    </InspectModeTooltip>
                   </div>
                 </div>
 
@@ -364,13 +442,21 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="weight_mt">Gross Weight (MT) *</Label>
-                    <Input
-                      id="weight_mt"
-                      type="number"
-                      step="0.1"
-                      placeholder="24.5"
-                      {...register("weight_mt", { required: true })}
-                    />
+                    <InspectModeTooltip
+                      fieldName="Gross Weight"
+                      description="Total weight of the container including cargo and tare weight, measured in Metric Tons. This affects stacking decisions and equipment selection."
+                      example="22.5 MT, 15.8 MT"
+                      required={true}
+                      validation="Heavy: ≥20MT | Medium: 10-20MT | Light: <10MT"
+                    >
+                      <Input
+                        id="weight_mt"
+                        type="number"
+                        step="0.1"
+                        placeholder="24.5"
+                        {...register("weight_mt", { required: true })}
+                      />
+                    </InspectModeTooltip>
                     <p className="text-xs text-muted-foreground">
                       Heavy: ≥20MT | Medium: 10-20MT | Light: &lt;10MT
                       {weightMt && ` | Current: ${getWeightClass(weightMt)}`}
@@ -379,11 +465,17 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
 
                   <div className="space-y-2">
                     <Label htmlFor="seal_number">Seal Number</Label>
-                    <Input
-                      id="seal_number"
-                      placeholder="SL123456"
-                      {...register("seal_number")}
-                    />
+                    <InspectModeTooltip
+                      fieldName="Seal Number"
+                      description="Security seal identifier used to verify container hasn't been tampered with during transit."
+                      example="SL123456, SEAL789012"
+                    >
+                      <Input
+                        id="seal_number"
+                        placeholder="SL123456"
+                        {...register("seal_number")}
+                      />
+                    </InspectModeTooltip>
                   </div>
                 </div>
 
@@ -429,20 +521,32 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="shipping_line">Shipping Line</Label>
-                    <Input
-                      id="shipping_line"
-                      placeholder="e.g., Maersk, MSC, CMA CGM"
-                      {...register("shipping_line")}
-                    />
+                    <InspectModeTooltip
+                      fieldName="Shipping Line"
+                      description="The ocean carrier company responsible for shipping this container. Used for grouping and billing purposes."
+                      example="Maersk, MSC, CMA CGM, Hapag-Lloyd, OOCL"
+                    >
+                      <Input
+                        id="shipping_line"
+                        placeholder="e.g., Maersk, MSC, CMA CGM"
+                        {...register("shipping_line")}
+                      />
+                    </InspectModeTooltip>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="consignee">Consignee</Label>
-                    <Input
-                      id="consignee"
-                      placeholder="e.g., ABC Corp"
-                      {...register("consignee")}
-                    />
+                    <InspectModeTooltip
+                      fieldName="Consignee"
+                      description="The party receiving the cargo at destination. Important for customs clearance and delivery coordination."
+                      example="ABC Corp, XYZ Trading Ltd"
+                    >
+                      <Input
+                        id="consignee"
+                        placeholder="e.g., ABC Corp"
+                        {...register("consignee")}
+                      />
+                    </InspectModeTooltip>
                   </div>
                 </div>
               </div>
@@ -476,29 +580,42 @@ export function ContainerEntryForm({ onSubmit, onCancel }: ContainerEntryFormPro
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="pod">Port of Destination</Label>
-                    <Input
-                      id="pod"
-                      placeholder="e.g., Colombo, Singapore, Dubai"
-                      {...register("pod")}
-                    />
+                    <InspectModeTooltip
+                      fieldName="Port of Destination"
+                      description="Final destination port where the container will be discharged. Containers going to the same port should be grouped together for efficient loading."
+                      example="Colombo, Singapore, Dubai, Rotterdam"
+                    >
+                      <Input
+                        id="pod"
+                        placeholder="e.g., Colombo, Singapore, Dubai"
+                        {...register("pod")}
+                      />
+                    </InspectModeTooltip>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="pod_priority">POD Priority (1-4)</Label>
-                    <Select
-                      defaultValue="2"
-                      onValueChange={(value) => setValue("pod_priority", value)}
+                    <InspectModeTooltip
+                      fieldName="POD Priority"
+                      description="Loading sequence priority. Priority 1 containers are loaded last (first out), Priority 4 loaded first (last out). This determines stacking order."
+                      example="1 = First Out, 4 = Last Out"
+                      validation="1-4, where 1 is highest priority"
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 - First Out</SelectItem>
-                        <SelectItem value="2">2</SelectItem>
-                        <SelectItem value="3">3</SelectItem>
-                        <SelectItem value="4">4 - Last Out</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <Select
+                        defaultValue="2"
+                        onValueChange={(value) => setValue("pod_priority", value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 - First Out</SelectItem>
+                          <SelectItem value="2">2</SelectItem>
+                          <SelectItem value="3">3</SelectItem>
+                          <SelectItem value="4">4 - Last Out</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </InspectModeTooltip>
                   </div>
                 </div>
 

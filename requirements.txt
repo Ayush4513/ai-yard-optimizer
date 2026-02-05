@@ -15,7 +15,10 @@ langchain-anthropic==0.1.0
 langchain-core==0.1.10
 
 # Embeddings
-sentence-transformers==2.2.2
+# Note: sentence-transformers 2.2.2 is incompatible with newer huggingface_hub
+# Using 2.3.0+ which is compatible with current huggingface_hub versions
+sentence-transformers>=2.3.0,<3.0.0
+huggingface_hub>=0.20.0,<1.0.0
 
 # Anthropic (Claude) - LLM for RAG
 anthropic==0.18.1

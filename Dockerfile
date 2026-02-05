@@ -46,16 +46,17 @@ RUN echo "=== Installing PyTorch (this may take 5-10 minutes) ===" && \
     echo "=== PyTorch installed ==="
 
 # Install sentence-transformers with dependencies
-RUN echo "=== Installing sentence-transformers ===" && \
+# Note: sentence-transformers 2.2.2 is incompatible with newer huggingface_hub
+# Using 2.3.0+ which is compatible with current huggingface_hub versions
+RUN echo "=== Installing huggingface_hub (compatible version) ===" && \
+    pip install --no-cache-dir --default-timeout=300 \
+        "huggingface_hub>=0.20.0,<1.0.0" && \
+    echo "=== Installing sentence-transformers ===" && \
     pip install --no-cache-dir --default-timeout=600 \
         "transformers>=4.30.0" \
-        "sentence-transformers==2.2.2" && \
+        "sentence-transformers>=2.3.0,<3.0.0" && \
     echo "=== Verifying sentence-transformers ===" && \
-    python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers OK')" || \
-    (echo "⚠ Retrying sentence-transformers..." && \
-     pip install --no-cache-dir --default-timeout=900 --upgrade \
-         "sentence-transformers==2.2.2" && \
-     python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers verified')")
+    python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers OK')"
 
 # Stage 5: Remaining packages (fast)
 RUN echo "=== Installing remaining packages ===" && \

@@ -2,12 +2,28 @@
 import sys
 from pathlib import Path
 
-# Add backend to path so Modules package is importable
-sys.path.insert(0, str(Path(__file__).parent.parent / "Yard-Optimization" / "backend"))
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from Modules.database.neo4j_client import neo4j_client
-from Modules.database.chroma_client import chroma_client
-from Modules.rag.retrieval_chain import HybridRetrievalChain
+# Try importing from main src/ directory first, fallback to Yard-Optimization/backend
+try:
+    from src.database.neo4j_client import neo4j_client
+    from src.database.chroma_client import chroma_client
+    from src.database.sqlite_client import sqlite_client
+    from src.rag.retrieval_chain import HybridRetrievalChain
+except ImportError:
+    # Fallback to Yard-Optimization/backend structure
+    sys.path.insert(0, str(project_root / "Yard-Optimization" / "backend"))
+    from Modules.database.neo4j_client import neo4j_client
+    from Modules.database.chroma_client import chroma_client
+    from Modules.rag.retrieval_chain import HybridRetrievalChain
+    # SQLite client might not exist in backend structure yet
+    try:
+        from Modules.database.sqlite_client import sqlite_client
+    except ImportError:
+        sqlite_client = None
+
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +60,27 @@ def test_chromadb():
         return False
 
 
+def test_sqlite():
+    """Test SQLite connection."""
+    logger.info("Testing SQLite connection...")
+    if sqlite_client is None:
+        logger.warning("⚠️  SQLite client not available (not imported)")
+        return False
+    try:
+        if sqlite_client.connect():
+            # Try to get table names
+            tables = sqlite_client.get_table_names()
+            logger.info(f"✅ SQLite: Connected successfully")
+            logger.info(f"   Found {len(tables)} tables: {', '.join(tables[:5])}{'...' if len(tables) > 5 else ''}")
+            return True
+        else:
+            logger.error("❌ SQLite: Connection failed")
+            return False
+    except Exception as e:
+        logger.error(f"❌ SQLite: {e}")
+        return False
+
+
 def test_retrieval_chain():
     """Test retrieval chain."""
     logger.info("Testing retrieval chain...")
@@ -66,6 +103,7 @@ def main():
     results = {
         "Neo4j": test_neo4j(),
         "ChromaDB": test_chromadb(),
+        "SQLite": test_sqlite(),
         "Retrieval Chain": test_retrieval_chain()
     }
     

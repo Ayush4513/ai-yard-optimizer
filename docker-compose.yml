@@ -39,6 +39,16 @@ services:
     depends_on:
       - neo4j
 
+  sqlite:
+    image: alpine:latest
+    container_name: container_yard_sqlite
+    volumes:
+      - ./data/sqlite:/data:ro  # Mount existing .db files (read-only)
+      - ./Yard-Optimization/backend:/backend:ro  # Also mount backend directory as fallback
+    command: tail -f /dev/null  # Keep container running
+    networks:
+      - container_yard_network
+
   api:
     build:
       context: .
@@ -54,6 +64,8 @@ services:
       - CHROMA_USE_DOCKER=true
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
+      - SQLITE_DB_PATH=/app/data/sqlite/yard_optimization.db
+      - SQLITE_BACKEND_DB_PATH=/app/backend/yard_optimization.db
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
@@ -62,6 +74,8 @@ services:
       - ./data:/app/data  # Rules JSON files
       - ./chroma_db:/app/chroma_db  # Local fallback (if needed)
       - ./.env:/app/.env:ro  # Read-only .env file
+      - ./data/sqlite:/app/data/sqlite:ro  # SQLite database files (read-only)
+      - ./Yard-Optimization/backend:/app/backend:ro  # Backend directory with .db files (read-only)
     networks:
       - container_yard_network
     depends_on:
@@ -69,7 +83,43 @@ services:
         condition: service_healthy
       chromadb:
         condition: service_started
+      sqlite:
+        condition: service_started
     restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./Yard-Optimization
+      dockerfile: Dockerfile
+    container_name: container_yard_frontend
+    ports:
+      - "5173:80"  # Frontend UI (mapped to port 5173 to match Vite default)
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    networks:
+      - container_yard_network
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Development frontend (optional - uncomment to use Vite dev server instead)
+  # frontend-dev:
+  #   build:
+  #     context: ./Yard-Optimization
+  #     dockerfile: Dockerfile.dev
+  #   container_name: container_yard_frontend_dev
+  #   ports:
+  #     - "5173:5173"  # Vite dev server
+  #   environment:
+  #     - VITE_API_URL=http://localhost:8000
+  #   volumes:
+  #     - ./Yard-Optimization/src:/app/src  # Hot reload
+  #   networks:
+  #     - container_yard_network
+  #   depends_on:
+  #     - api
+  #   command: npm run dev -- --host 0.0.0.0
 
 volumes:
   neo4j_data:

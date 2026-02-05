@@ -30,3 +30,13 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 LANGCHAIN_TRACING_V2 = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY", "")
 
+# SQLite Configuration
+# When running in Docker, use mounted path; locally use project path
+SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", 
+    "/app/data/sqlite/yard_optimization.db" if os.getenv("DOCKER_ENV") 
+    else str(PROJECT_ROOT / "data" / "sqlite" / "yard_optimization.db"))
+# Fallback to backend directory if primary path doesn't exist
+SQLITE_BACKEND_DB_PATH = os.getenv("SQLITE_BACKEND_DB_PATH",
+    "/app/backend/yard_optimization.db" if os.getenv("DOCKER_ENV")
+    else str(PROJECT_ROOT / "Yard-Optimization" / "backend" / "yard_optimization.db"))
+

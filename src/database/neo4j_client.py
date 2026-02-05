@@ -51,17 +51,43 @@ class Neo4jClient:
     def initialize_schema(self):
         """Initialize Neo4j schema with constraints and indexes."""
         schema_queries = [
-            # Constraints
+            # Constraints - Container
+            "CREATE CONSTRAINT container_id_unique IF NOT EXISTS FOR (c:Container) REQUIRE c.containerId IS UNIQUE",
             "CREATE CONSTRAINT container_number_unique IF NOT EXISTS FOR (c:Container) REQUIRE c.containerNumber IS UNIQUE",
+            
+            # Constraints - Slot
             "CREATE CONSTRAINT slot_id_unique IF NOT EXISTS FOR (s:Slot) REQUIRE s.slotId IS UNIQUE",
+            
+            # Constraints - Vessel
+            "CREATE CONSTRAINT vessel_id_unique IF NOT EXISTS FOR (v:Vessel) REQUIRE v.vesselId IS UNIQUE",
             "CREATE CONSTRAINT vessel_imo_unique IF NOT EXISTS FOR (v:Vessel) REQUIRE v.imoNumber IS UNIQUE",
+            
+            # Constraints - Block
+            "CREATE CONSTRAINT block_id_unique IF NOT EXISTS FOR (b:Block) REQUIRE b.blockId IS UNIQUE",
+            
+            # Constraints - Yard
+            "CREATE CONSTRAINT yard_id_unique IF NOT EXISTS FOR (y:Yard) REQUIRE y.yardId IS UNIQUE",
+            
+            # Constraints - TruckAppointment (existing)
             "CREATE CONSTRAINT truck_appointment_id_unique IF NOT EXISTS FOR (t:TruckAppointment) REQUIRE t.appointmentId IS UNIQUE",
             
-            # Indexes
+            # Indexes - Container
             "CREATE INDEX container_status_idx IF NOT EXISTS FOR (c:Container) ON (c.status)",
             "CREATE INDEX container_type_idx IF NOT EXISTS FOR (c:Container) ON (c.containerType)",
+            "CREATE INDEX container_pod_idx IF NOT EXISTS FOR (c:Container) ON (c.pod)",
+            "CREATE INDEX container_vessel_idx IF NOT EXISTS FOR (c:Container) ON (c.vesselId)",
+            
+            # Indexes - Slot
             "CREATE INDEX slot_zone_idx IF NOT EXISTS FOR (s:Slot) ON (s.zoneType)",
+            "CREATE INDEX slot_block_idx IF NOT EXISTS FOR (s:Slot) ON (s.blockId)",
+            "CREATE INDEX slot_occupied_idx IF NOT EXISTS FOR (s:Slot) ON (s.isOccupied)",
+            
+            # Indexes - Vessel
             "CREATE INDEX vessel_voyage_idx IF NOT EXISTS FOR (v:Vessel) ON (v.voyageNumber)",
+            
+            # Indexes - Block
+            "CREATE INDEX block_yard_idx IF NOT EXISTS FOR (b:Block) ON (b.yardName)",
+            "CREATE INDEX block_type_idx IF NOT EXISTS FOR (b:Block) ON (b.blockType)",
         ]
         
         with self.get_session() as session:

@@ -17,8 +17,7 @@ from Database.database import engine, get_db
 from Database import models, schemas
 from Api.routes import router as extended_router
 
-# Create SQLite tables
-models.Base.metadata.create_all(bind=engine)
+# SQLite table creation will happen in startup event (not at import time)
 
 
 class LLMGenerateRequest(BaseModel):
@@ -268,6 +267,15 @@ async def startup_event():
     if os.getenv("DOCKER_ENV"):
         logger.info("Running in Docker - waiting for databases...")
         time.sleep(5)
+
+    # Initialize SQLite database (non-blocking - app can start even if this fails)
+    try:
+        # engine is already imported at top of file
+        models.Base.metadata.create_all(bind=engine)
+        logger.info("SQLite database initialized successfully")
+    except Exception as e:
+        logger.warning(f"SQLite database initialization failed (non-critical): {e}")
+        logger.info("Application will continue without SQLite CRUD features")
 
     # Initialize Neo4j
     max_retries = 5

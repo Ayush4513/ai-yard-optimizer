@@ -39,12 +39,23 @@ RUN echo "=== Installing LangChain packages ===" && \
         "langchain-core==0.1.10"
 
 # Stage 4: ML/AI packages (SLOW - this is where it takes time)
-RUN echo "=== Installing ML packages (this may take 5-10 minutes) ===" && \
+# Install torch first (required by sentence-transformers)
+RUN echo "=== Installing PyTorch (this may take 5-10 minutes) ===" && \
     pip install --no-cache-dir --default-timeout=600 \
-        "sentence-transformers==2.2.2" || \
-    (echo "sentence-transformers failed, retrying..." && \
-     pip install --no-cache-dir --default-timeout=900 --retries 3 \
-         "sentence-transformers==2.2.2")
+        "torch>=2.0.0" && \
+    echo "=== PyTorch installed ==="
+
+# Install sentence-transformers with dependencies
+RUN echo "=== Installing sentence-transformers ===" && \
+    pip install --no-cache-dir --default-timeout=600 \
+        "transformers>=4.30.0" \
+        "sentence-transformers==2.2.2" && \
+    echo "=== Verifying sentence-transformers ===" && \
+    python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers OK')" || \
+    (echo "⚠ Retrying sentence-transformers..." && \
+     pip install --no-cache-dir --default-timeout=900 --upgrade \
+         "sentence-transformers==2.2.2" && \
+     python -c "from sentence_transformers import SentenceTransformer; print('✓ sentence-transformers verified')")
 
 # Stage 5: Remaining packages (fast)
 RUN echo "=== Installing remaining packages ===" && \
@@ -54,10 +65,29 @@ RUN echo "=== Installing remaining packages ===" && \
         "httpx==0.25.2"
 
 # Copy application code
-COPY . .
+# Copy root-level files first
+COPY requirements.txt .
+COPY .env* ./
+
+# Copy Yard-Optimization backend (the main API)
+COPY Yard-Optimization/backend /app/Yard-Optimization/backend
+
+# Install backend-specific requirements if they exist
+RUN if [ -f /app/Yard-Optimization/backend/requirements.txt ]; then \
+        echo "=== Installing backend requirements ===" && \
+        pip install --no-cache-dir --default-timeout=300 -r /app/Yard-Optimization/backend/requirements.txt; \
+    fi
+
+# Copy src directory (for shared modules if needed, but exclude main.py to avoid conflicts)
+COPY src /app/src
+RUN rm -f /app/src/main.py 2>/dev/null || true  # Remove conflicting main.py if it exists
+
+# Copy data and scripts directories
+COPY data /app/data
+COPY scripts /app/scripts
 
 # Create necessary directories
-RUN mkdir -p data chroma_db
+RUN mkdir -p /app/data /app/chroma_db /app/Yard-Optimization/backend
 
 # Expose FastAPI port
 EXPOSE 8000
@@ -66,7 +96,15 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
+# Set working directory to backend (where the main app is)
+WORKDIR /app/Yard-Optimization/backend
+
+# Set PYTHONPATH to include backend directory so Modules.* imports work
 ENV PYTHONPATH=/app/Yard-Optimization/backend
+
+# Verify the main module can be imported before running
+RUN python -c "import Modules.main; print('Main module import successful')" || echo "Warning: Main module import check failed"
+
+# Run the application from the backend directory
 CMD ["python", "-m", "uvicorn", "Modules.main:app", "--host", "0.0.0.0", "--port", "8000"]
 

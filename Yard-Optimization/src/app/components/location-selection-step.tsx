@@ -26,7 +26,7 @@ import type {
   ColorCodingMode,
 } from "@/app/types/yard-optimization";
 import { validateLocation, generateAIRecommendations } from "@/app/utils/yard-validation";
-import { yardAPI, blockAPI, optimizationAPI } from "@/services/api";
+import { yardAPI, blockAPI, optimizationAPI, containerAPI } from "@/services/api";
 import { YardOverview } from "@/app/components/yard-overview";
 import { YardDetailView } from "@/app/components/yard-detail-view";
 import { MetricsPanel } from "@/app/components/metrics-panel";
@@ -130,11 +130,31 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
     }
   };
 
-  const handleConfirmSave = () => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleConfirmSave = async () => {
     if (!selectedLocation) return;
-    
-    toast.success(`Container ${container.container_number} successfully assigned to ${selectedLocation.location_id}`);
-    onConfirm();
+
+    try {
+      setIsSaving(true);
+      // Persist the location assignment to the database
+      await containerAPI.update(container.container_id, {
+        current_location_id: selectedLocation.location_id,
+        block_id: selectedLocation.block_id,
+        bay: selectedLocation.bay,
+        row: selectedLocation.row,
+        tier: selectedLocation.tier,
+      });
+      toast.success(`Container ${container.container_number} successfully assigned to ${selectedLocation.location_id}`);
+      onConfirm();
+    } catch (error: any) {
+      console.error("Failed to save location assignment:", error);
+      toast.error("Failed to save location assignment", {
+        description: error.response?.data?.detail || error.message || "Please try again",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleRecommendationClick = async (recommendation: AIRecommendation) => {
@@ -206,9 +226,13 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
           </div>
 
           {selectedLocation && !validationError && (
-            <Button onClick={handleConfirmSave} className="gap-2">
-              <Save className="h-4 w-4" />
-              Confirm & Save
+            <Button onClick={handleConfirmSave} disabled={isSaving} className="gap-2">
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {isSaving ? "Saving..." : "Confirm & Save"}
             </Button>
           )}
         </CardContent>

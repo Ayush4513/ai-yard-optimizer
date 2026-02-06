@@ -339,10 +339,10 @@ export function ContainersPage() {
               Incoming Containers ({incomingContainers.length})
             </TabsTrigger>
             <TabsTrigger value="yard">
-              Yard Inventory ({inYardContainers.length})
+              Container Retrieval ({inYardContainers.length})
             </TabsTrigger>
             <TabsTrigger value="retrieval">
-              Container Retrieval ({outgoingContainers.length})
+              Yard Inventory ({outgoingContainers.length})
             </TabsTrigger>
           </TabsList>
 

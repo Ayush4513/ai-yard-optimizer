@@ -226,6 +226,40 @@ def update_container(
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # Check if location assignment is being made
+    has_location_update = (
+        update_data.get("block_id") and
+        update_data.get("bay") is not None and
+        update_data.get("row") is not None and
+        update_data.get("tier") is not None
+    )
+
+    locations_table = get_locations_table()
+    blocks_table = get_blocks_table()
+    location_id = update_data.get("current_location_id")
+
+    if has_location_update and not location_id:
+        # Look up location_id from block/bay/row/tier
+        loc = db.execute(text(f"""
+            SELECT location_id, occupied FROM {locations_table}
+            WHERE block_id = :block_id AND bay = :bay AND row = :row AND tier = :tier
+        """), {
+            "block_id": update_data["block_id"],
+            "bay": update_data["bay"],
+            "row": update_data["row"],
+            "tier": update_data["tier"]
+        }).fetchone()
+
+        if loc:
+            location_id = loc[0]
+            is_occupied = loc[1]
+            if is_occupied:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Location {location_id} is already occupied"
+                )
+            update_data["current_location_id"] = location_id
+
     set_clauses = [f"{col} = :{col}" for col in update_data.keys()]
     update_data["container_id"] = container_id
 
@@ -234,9 +268,28 @@ def update_container(
         SET {', '.join(set_clauses)}
         WHERE container_id = :container_id
     """), update_data)
+
+    # If location was assigned, mark it occupied and update block stats
+    if has_location_update and location_id:
+        db.execute(text(f"""
+            UPDATE {locations_table}
+            SET occupied = 1, container_id = :container_id, status = 'actual'
+            WHERE location_id = :location_id
+        """), {"container_id": container_id, "location_id": location_id})
+
+        db.execute(text(f"""
+            UPDATE {blocks_table}
+            SET occupied_slots = occupied_slots + 1
+            WHERE block_id = :block_id
+        """), {"block_id": update_data["block_id"]})
+
     db.commit()
 
-    return {"message": f"Container {container_id} updated successfully"}
+    return {
+        "message": f"Container {container_id} updated successfully",
+        "placed": has_location_update and location_id is not None,
+        "location_id": location_id
+    }
 
 
 @app.delete("/containers/{container_id}")

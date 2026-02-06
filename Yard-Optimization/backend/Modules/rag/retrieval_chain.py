@@ -51,7 +51,7 @@ class HybridRetrievalChain:
             try:
                 self.llm = ChatAnthropic(
                     model=ANTHROPIC_MODEL,
-                    api_key=ANTHROPIC_API_KEY,
+                    anthropic_api_key=ANTHROPIC_API_KEY,
                     temperature=0.7
                 )
                 logger.info(f"✅ Anthropic Claude LLM initialized for RAG (model: {ANTHROPIC_MODEL})")

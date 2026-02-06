@@ -207,7 +207,8 @@ export const optimizationAPI = {
   getPlacementRecommendations: async (request: PlacementRequest) => {
     const response = await api.post<PlacementRecommendation>(
       '/optimize/placement',
-      request
+      request,
+      { timeout: 60000 }  // 60s timeout for LLM processing
     );
     return response.data;
   },

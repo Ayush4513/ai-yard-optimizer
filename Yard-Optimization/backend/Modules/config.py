@@ -24,7 +24,7 @@ CHROMA_USE_DOCKER = os.getenv("CHROMA_USE_DOCKER", "true").lower() == "true"
 
 # Anthropic Configuration (Required for LLM features)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
 
 # LangChain Configuration
 LANGCHAIN_TRACING_V2 = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"

@@ -65,7 +65,7 @@ services:
       - SQLITE_DB_PATH=/app/data/sqlite/yard_optimization.db
       - SQLITE_BACKEND_DB_PATH=/app/backend/yard_optimization.db
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
     volumes:
@@ -73,7 +73,7 @@ services:
       - ./chroma_db:/app/chroma_db  # Local fallback (if needed)
       - ./.env:/app/.env:ro  # Read-only .env file
       - ./data/sqlite:/app/data/sqlite:ro  # SQLite database files (read-only)
-      - ./Yard-Optimization/backend:/app/backend:ro  # Backend directory with .db files (read-only)
+      - ./Yard-Optimization/backend:/app/backend  # Backend directory with .db files (read-write for container creation)
     networks:
       - container_yard_network
     depends_on:

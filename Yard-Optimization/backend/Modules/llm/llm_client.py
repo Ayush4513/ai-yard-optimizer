@@ -43,8 +43,9 @@ class LLMClient:
         try:
             self.llm = ChatAnthropic(
                 model=model_name,
-                api_key=ANTHROPIC_API_KEY,
-                temperature=0.7
+                anthropic_api_key=ANTHROPIC_API_KEY,
+                temperature=0.7,
+                max_tokens=2048
             )
             logger.info(f"✅ Anthropic Claude initialized: {model_name}")
         except Exception as e:

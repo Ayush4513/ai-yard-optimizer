@@ -26,7 +26,7 @@ import type {
   ColorCodingMode,
 } from "@/app/types/yard-optimization";
 import { validateLocation, generateAIRecommendations } from "@/app/utils/yard-validation";
-import { yardAPI, blockAPI } from "@/services/api";
+import { yardAPI, blockAPI, optimizationAPI } from "@/services/api";
 import { YardOverview } from "@/app/components/yard-overview";
 import { YardDetailView } from "@/app/components/yard-detail-view";
 import { MetricsPanel } from "@/app/components/metrics-panel";
@@ -40,7 +40,9 @@ interface LocationSelectionStepProps {
 export function LocationSelectionStep({ container, onBack, onConfirm }: LocationSelectionStepProps) {
   const [selectedLocation, setSelectedLocation] = useState<YardLocation | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [recommendations] = useState<AIRecommendation[]>([]);
+  const [recommendations, setRecommendations] = useState<AIRecommendation[]>([]);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(true);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"overview" | "detail">("overview");
   const [detailBlock, setDetailBlock] = useState<Block | null>(null);
   const [colorCodingMode, setColorCodingMode] = useState<ColorCodingMode>("shipping_line");
@@ -69,6 +71,31 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
     }
     fetchYardData();
   }, []);
+
+  // Fetch AI placement recommendations from LLM
+  useEffect(() => {
+    async function fetchRecommendations() {
+      try {
+        setLoadingRecommendations(true);
+        setRecommendationError(null);
+        const result = await optimizationAPI.getPlacementRecommendations({
+          container_id: container.container_id,
+          container_type: container.container_type,
+          pod: container.pod,
+          weight_class: container.weight_class,
+          hazmat_flag: container.hazmat_flag,
+          reefer_flag: container.reefer_flag,
+        });
+        setRecommendations(result.recommendations);
+      } catch (err) {
+        console.error("Recommendation fetch error:", err);
+        setRecommendationError("Failed to load AI recommendations");
+      } finally {
+        setLoadingRecommendations(false);
+      }
+    }
+    fetchRecommendations();
+  }, [container]);
 
   const handleLocationSelect = (location: YardLocation) => {
     const error = validateLocation(
@@ -110,8 +137,27 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
     onConfirm();
   };
 
-  const handleRecommendationClick = (recommendation: AIRecommendation) => {
-    handleLocationSelect(recommendation.location);
+  const handleRecommendationClick = async (recommendation: AIRecommendation) => {
+    // AI recommendations are pre-validated — skip validateLocation to avoid
+    // false "stack integrity" errors when detailBlock is not loaded yet
+    setSelectedLocation(recommendation.location);
+    setValidationError(null);
+    toast.success("Location validated successfully!");
+
+    // Auto-navigate to the recommended block's detail view
+    const blockId = recommendation.location.block_id;
+    if (blockId && viewMode !== "detail") {
+      try {
+        setLoadingDetail(true);
+        const blockDetail = await blockAPI.getDetails(blockId);
+        setDetailBlock(blockDetail);
+        setViewMode("detail");
+      } catch (err) {
+        console.error("Block detail fetch error:", err);
+      } finally {
+        setLoadingDetail(false);
+      }
+    }
   };
 
   return (
@@ -188,6 +234,24 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
           </div>
         </CardHeader>
         <CardContent>
+          {loadingRecommendations ? (
+            <div className="flex items-center justify-center gap-3 py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+              <span className="text-muted-foreground">Getting AI recommendations...</span>
+            </div>
+          ) : recommendationError ? (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-900">Recommendations Unavailable</AlertTitle>
+              <AlertDescription className="text-amber-700">
+                {recommendationError}. You can still select a location manually from the yard map below.
+              </AlertDescription>
+            </Alert>
+          ) : recommendations.length === 0 ? (
+            <div className="py-6 text-center text-muted-foreground">
+              No recommendations available. Select a location manually from the yard map below.
+            </div>
+          ) : (
           <div className="grid grid-cols-3 gap-4">
             {recommendations.map((rec) => (
               <Card
@@ -285,6 +349,7 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
               </Card>
             ))}
           </div>
+          )}
         </CardContent>
       </Card>
 

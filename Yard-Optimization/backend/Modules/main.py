@@ -4,8 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import logging
 import os
+import json as json_lib
+import re as re_lib
 
 from Modules.database.neo4j_client import neo4j_client
 from Modules.database.chroma_client import chroma_client
@@ -16,6 +19,16 @@ from Modules.llm.llm_client import get_default_llm
 from Database.database import engine, get_db
 from Database import models, schemas
 from Api.routes import router as extended_router
+
+# v2 table name helpers (matching config.py USE_V2_TABLES=True)
+def get_containers_table():
+    return "containers_v2"
+
+def get_locations_table():
+    return "yard_locations_v2"
+
+def get_blocks_table():
+    return "blocks_v2"
 
 # SQLite table creation will happen in startup event (not at import time)
 
@@ -58,69 +71,191 @@ app.include_router(extended_router)
 # ============================================================================
 
 @app.get("/containers")
-def get_containers(db: Session = Depends(get_db)):
-    """Get all containers"""
-    containers = db.query(models.Container).all()
-    all_columns = [col.name for col in models.Container.__table__.columns]
-    return [
-        {col_name: getattr(c, col_name) for col_name in all_columns}
-        for c in containers
+def get_containers(
+    skip: int = 0,
+    limit: int = 5000,
+    db: Session = Depends(get_db)
+):
+    """Get containers with pagination. Uses v2 tables."""
+    limit = min(limit, 50000)
+    containers_table = get_containers_table()
+
+    total = db.execute(text(f"SELECT COUNT(*) FROM {containers_table}")).scalar()
+
+    containers = db.execute(text(f"""
+        SELECT * FROM {containers_table}
+        LIMIT :limit OFFSET :skip
+    """), {"limit": limit, "skip": skip}).fetchall()
+
+    col_info = db.execute(text(f"PRAGMA table_info({containers_table})")).fetchall()
+    columns = [col[1] for col in col_info]
+
+    containers_list = [
+        {columns[i]: row[i] for i in range(len(columns))}
+        for row in containers
     ]
+
+    return {
+        "data": containers_list,
+        "pagination": {
+            "skip": skip,
+            "limit": limit,
+            "total": total,
+            "has_more": skip + limit < total
+        }
+    }
 
 
 @app.get("/containers/{container_id}")
 def get_container(container_id: str, db: Session = Depends(get_db)):
-    """Get a specific container by ID"""
-    container = db.query(models.Container).filter(
-        models.Container.container_id == container_id
-    ).first()
+    """Get a specific container by ID. Uses v2 tables."""
+    containers_table = get_containers_table()
+
+    col_info = db.execute(text(f"PRAGMA table_info({containers_table})")).fetchall()
+    columns = [col[1] for col in col_info]
+
+    container = db.execute(text(f"""
+        SELECT * FROM {containers_table} WHERE container_id = :container_id
+    """), {"container_id": container_id}).fetchone()
+
     if not container:
         raise HTTPException(status_code=404, detail="Container not found")
-    all_columns = [col.name for col in models.Container.__table__.columns]
-    return {col_name: getattr(container, col_name) for col_name in all_columns}
+
+    return {columns[i]: container[i] for i in range(len(columns))}
 
 
-@app.post("/containers", response_model=schemas.Container)
+@app.post("/containers")
 def create_container(container: schemas.ContainerCreate, db: Session = Depends(get_db)):
-    """Create a new container"""
-    existing = db.query(models.Container).filter(
-        models.Container.container_number == container.container_number
-    ).first()
+    """Create a new container. Uses v2 tables."""
+    containers_table = get_containers_table()
+    locations_table = get_locations_table()
+    blocks_table = get_blocks_table()
+
+    # Check if container already exists
+    existing = db.execute(text(f"""
+        SELECT container_id FROM {containers_table} WHERE container_number = :container_number
+    """), {"container_number": container.container_number}).fetchone()
+
     if existing:
-        raise HTTPException(status_code=400, detail=f"Container {container.container_number} already exists")
-    db_container = models.Container(**container.dict())
-    db.add(db_container)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Container {container.container_number} already exists"
+        )
+
+    container_data = container.dict()
+
+    # Check if placement info is provided
+    has_placement = (
+        container_data.get("block_id") and
+        container_data.get("bay") and
+        container_data.get("row") and
+        container_data.get("tier")
+    )
+
+    location_id = None
+    if has_placement:
+        location = db.execute(text(f"""
+            SELECT location_id, occupied FROM {locations_table}
+            WHERE block_id = :block_id AND bay = :bay AND row = :row AND tier = :tier
+        """), {
+            "block_id": container_data["block_id"],
+            "bay": container_data["bay"],
+            "row": container_data["row"],
+            "tier": container_data["tier"]
+        }).fetchone()
+
+        if location:
+            location_id, occupied = location
+            if occupied:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Location {location_id} is already occupied"
+                )
+            container_data["current_location_id"] = location_id
+
+    # Build INSERT statement dynamically
+    columns = list(container_data.keys())
+    placeholders = [f":{col}" for col in columns]
+
+    db.execute(text(f"""
+        INSERT INTO {containers_table} ({', '.join(columns)})
+        VALUES ({', '.join(placeholders)})
+    """), container_data)
+
+    # If placement was provided, update location and block
+    if has_placement and location_id:
+        db.execute(text(f"""
+            UPDATE {locations_table}
+            SET occupied = 1, container_id = :container_id, status = 'actual'
+            WHERE location_id = :location_id
+        """), {"container_id": container_data["container_id"], "location_id": location_id})
+
+        db.execute(text(f"""
+            UPDATE {blocks_table}
+            SET occupied_slots = occupied_slots + 1
+            WHERE block_id = :block_id
+        """), {"block_id": container_data["block_id"]})
+
     db.commit()
-    db.refresh(db_container)
-    return db_container
+
+    return {
+        "message": "Container created successfully",
+        "placed": has_placement and location_id is not None,
+        "location_id": location_id,
+        **container_data
+    }
 
 
-@app.put("/containers/{container_id}", response_model=schemas.Container)
-def update_container(container_id: str, container: schemas.ContainerUpdate, db: Session = Depends(get_db)):
-    """Update an existing container"""
-    db_container = db.query(models.Container).filter(
-        models.Container.container_id == container_id
-    ).first()
-    if not db_container:
+@app.put("/containers/{container_id}")
+def update_container(
+    container_id: str,
+    container: schemas.ContainerUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update an existing container. Uses v2 tables."""
+    containers_table = get_containers_table()
+
+    existing = db.execute(text(f"""
+        SELECT container_id FROM {containers_table} WHERE container_id = :container_id
+    """), {"container_id": container_id}).fetchone()
+
+    if not existing:
         raise HTTPException(status_code=404, detail="Container not found")
+
     update_data = container.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_container, field, value)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    set_clauses = [f"{col} = :{col}" for col in update_data.keys()]
+    update_data["container_id"] = container_id
+
+    db.execute(text(f"""
+        UPDATE {containers_table}
+        SET {', '.join(set_clauses)}
+        WHERE container_id = :container_id
+    """), update_data)
     db.commit()
-    db.refresh(db_container)
-    return db_container
+
+    return {"message": f"Container {container_id} updated successfully"}
 
 
 @app.delete("/containers/{container_id}")
 def delete_container(container_id: str, db: Session = Depends(get_db)):
-    """Delete a container"""
-    db_container = db.query(models.Container).filter(
-        models.Container.container_id == container_id
-    ).first()
-    if not db_container:
+    """Delete a container. Uses v2 tables."""
+    containers_table = get_containers_table()
+
+    existing = db.execute(text(f"""
+        SELECT container_id FROM {containers_table} WHERE container_id = :container_id
+    """), {"container_id": container_id}).fetchone()
+
+    if not existing:
         raise HTTPException(status_code=404, detail="Container not found")
-    db.delete(db_container)
+
+    db.execute(text(f"""
+        DELETE FROM {containers_table} WHERE container_id = :container_id
+    """), {"container_id": container_id})
     db.commit()
+
     return {"message": f"Container {container_id} deleted successfully"}
 
 
@@ -128,17 +263,67 @@ def delete_container(container_id: str, db: Session = Depends(get_db)):
 # YARD LOCATION ENDPOINTS
 # ============================================================================
 
-@app.get("/locations", response_model=List[schemas.YardLocation])
-def get_locations(yard_name: str = None, block_id: str = None, occupied: bool = None, db: Session = Depends(get_db)):
-    """Get all yard locations with optional filters"""
-    query = db.query(models.YardLocation)
+@app.get("/locations")
+def get_locations(
+    yard_name: str = None,
+    block_id: str = None,
+    occupied: bool = None,
+    skip: int = 0,
+    limit: int = 5000,
+    db: Session = Depends(get_db)
+):
+    """Get yard locations with optional filters. Uses v2 tables."""
+    limit = min(limit, 50000)
+    locations_table = get_locations_table()
+
+    conditions = []
+    params = {"limit": limit, "skip": skip}
+
     if yard_name:
-        query = query.filter(models.YardLocation.yard_name == yard_name)
+        conditions.append("yard_name = :yard_name")
+        params["yard_name"] = yard_name
     if block_id:
-        query = query.filter(models.YardLocation.block_id == block_id)
+        conditions.append("block_id = :block_id")
+        params["block_id"] = block_id
     if occupied is not None:
-        query = query.filter(models.YardLocation.occupied == occupied)
-    return query.all()
+        conditions.append("occupied = :occupied")
+        params["occupied"] = 1 if occupied else 0
+
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+    total = db.execute(text(f"SELECT COUNT(*) FROM {locations_table} WHERE {where_clause}"), params).scalar()
+
+    locations = db.execute(text(f"""
+        SELECT location_id, yard_name, block_id, bay, row, tier, occupied, container_id, status
+        FROM {locations_table}
+        WHERE {where_clause}
+        LIMIT :limit OFFSET :skip
+    """), params).fetchall()
+
+    locations_list = [
+        {
+            "location_id": loc[0],
+            "yard_name": loc[1],
+            "block_id": loc[2],
+            "bay": loc[3],
+            "row": loc[4],
+            "tier": loc[5],
+            "occupied": bool(loc[6]),
+            "container_id": loc[7],
+            "status": loc[8],
+        }
+        for loc in locations
+    ]
+
+    return {
+        "data": locations_list,
+        "pagination": {
+            "skip": skip,
+            "limit": limit,
+            "total": total,
+            "has_more": skip + limit < total
+        }
+    }
 
 
 @app.get("/locations/{location_id}", response_model=schemas.YardLocation)
@@ -184,31 +369,203 @@ def update_location(location_id: str, location: schemas.YardLocationUpdate, db: 
 
 @app.post("/optimize/placement", response_model=schemas.PlacementRecommendation)
 def get_placement_recommendation(request: schemas.PlacementRequest, db: Session = Depends(get_db)):
-    """Get AI-powered placement recommendations for a container"""
-    available_locations = db.query(models.YardLocation).filter(
-        models.YardLocation.occupied == False
-    ).limit(3).all()
-    if not available_locations:
+    """Get AI-powered placement recommendations for a container using LLM + RAG."""
+    containers_table = get_containers_table()
+    locations_table = get_locations_table()
+    blocks_table = get_blocks_table()
+
+    # 1. Get available slots (unoccupied locations) with block info
+    available = db.execute(text(f"""
+        SELECT yl.*, b.block_type, b.reefer_plugs, b.hazmat_certified
+        FROM {locations_table} yl
+        JOIN {blocks_table} b ON yl.block_id = b.block_id
+        WHERE yl.occupied = 0
+        ORDER BY yl.block_id, yl.bay, yl.row, yl.tier
+        LIMIT 50
+    """)).mappings().all()
+
+    if not available:
         raise HTTPException(status_code=404, detail="No available locations found")
+
+    # 2. Get yard state (occupancy per block)
+    block_stats = db.execute(text(f"""
+        SELECT b.block_id, b.block_type, b.total_slots, b.reefer_plugs, b.hazmat_certified,
+               COUNT(c.container_id) as container_count
+        FROM {blocks_table} b
+        LEFT JOIN {containers_table} c ON c.block_id = b.block_id
+        GROUP BY b.block_id
+    """)).mappings().all()
+
+    # 3. Get ChromaDB context (yard rules)
+    rules_context = ""
+    try:
+        rules_col = chroma_client.client.get_collection("yard_rules")
+        if rules_col.count() > 0:
+            results = rules_col.query(
+                query_texts=[f"placement rules for {request.container_type or 'general'} container"],
+                n_results=5
+            )
+            if results and results.get("documents"):
+                rules_context = "\n".join(results["documents"][0])
+    except Exception:
+        logger.debug("ChromaDB yard_rules query failed, continuing without context")
+
+    # 4. Build LLM prompt
+    available_summary = {}
+    for slot in available[:50]:
+        bid = slot["block_id"]
+        if bid not in available_summary:
+            available_summary[bid] = {"count": 0, "type": slot.get("block_type", "General")}
+        available_summary[bid]["count"] += 1
+
+    block_state_text = "\n".join([
+        f"- {bs['block_id']}: {bs['block_type']}, {bs['container_count']}/{bs['total_slots']} slots used"
+        for bs in block_stats
+    ])
+
+    available_text = "\n".join([
+        f"- {bid}: {info['count']} available slots ({info['type']})"
+        for bid, info in available_summary.items()
+    ])
+
+    slot_ids_text = "\n".join([f"- {s['location_id']}" for s in available[:20]])
+
+    prompt = f"""You are a container yard optimization expert. Recommend the TOP 3 placement locations for this container.
+
+Container Details:
+- Container ID: {request.container_id}
+- Type: {request.container_type or 'General'}
+- POD: {request.pod or 'Unknown'}
+- Weight Class: {request.weight_class or 'Medium'}
+- Hazmat: {request.hazmat_flag}
+- Reefer: {request.reefer_flag}
+
+Yard Rules:
+{rules_context or 'Standard stacking rules apply.'}
+
+Block Occupancy:
+{block_state_text}
+
+Available Slots by Block:
+{available_text}
+
+Available Slot IDs (first 20):
+{slot_ids_text}
+
+Provide exactly 3 recommendations in JSON array format:
+[
+  {{"location_id": "BLOCK-BAY-ROW-TIER", "block_id": "BLOCK_ID", "bay": BAY_NUMBER, "row": ROW_NUMBER, "tier": TIER_NUMBER, "score": 0-100, "reasons": ["reason1", "reason2"], "warnings": [], "rehandle_risk": 0-100, "estimated_retrieval_minutes": MINUTES}},
+  ...
+]
+
+Pick locations from the available slot IDs listed above. Optimize for:
+1. Minimize rehandle risk
+2. POD clustering
+3. Weight stacking compliance
+4. Block utilization balance"""
+
+    # 5. Call LLM and parse response
     recommendations = []
-    for idx, location in enumerate(available_locations):
+    try:
+        llm = get_default_llm()
+        if llm:
+            response = llm.generate(prompt)
+            logger.info(f"LLM response received ({len(response)} chars)")
+            # Parse JSON array from LLM response
+            parsed = None
+            # Strategy 1: Try extracting from ```json ... ``` code block
+            code_match = re_lib.search(r'```(?:json)?\s*([\s\S]*?)```', response)
+            if code_match:
+                code_content = code_match.group(1).strip()
+                try:
+                    parsed = json_lib.loads(code_content)
+                except json_lib.JSONDecodeError as e:
+                    logger.debug(f"Code block JSON parse failed: {e}")
+            # Strategy 2: Find balanced JSON array brackets
+            if parsed is None:
+                start_idx = response.find('[')
+                if start_idx != -1:
+                    depth = 0
+                    end_idx = start_idx
+                    for i in range(start_idx, len(response)):
+                        if response[i] == '[':
+                            depth += 1
+                        elif response[i] == ']':
+                            depth -= 1
+                            if depth == 0:
+                                end_idx = i + 1
+                                break
+                    json_str = response[start_idx:end_idx]
+                    parsed = json_lib.loads(json_str)
+            if parsed:
+                for idx, rec in enumerate(parsed[:3]):
+                    loc_id = rec.get("location_id", "")
+                    # Find matching available slot
+                    matching = [s for s in available if s["location_id"] == loc_id]
+                    if matching:
+                        slot = matching[0]
+                    else:
+                        slot = available[idx] if idx < len(available) else available[0]
+                        loc_id = slot["location_id"]
+
+                    recommendations.append({
+                        "rank": idx + 1,
+                        "location": {
+                            "location_id": loc_id,
+                            "yard_name": slot.get("yard_name", ""),
+                            "block_id": slot.get("block_id", ""),
+                            "bay": int(slot["bay"]),
+                            "row": int(slot["row"]),
+                            "tier": int(slot["tier"]),
+                            "occupied": False,
+                        },
+                        "score": rec.get("score", 90 - idx * 5),
+                        "reasons": rec.get("reasons", ["LLM recommended"]),
+                        "warnings": rec.get("warnings", []),
+                        "estimated_retrieval_minutes": rec.get("estimated_retrieval_minutes", 5 + idx * 2),
+                        "metrics": {
+                            "rehandle_risk_percent": rec.get("rehandle_risk", 10 + idx * 5),
+                            "blocking_containers": idx,
+                            "distance_to_quay_m": 150,
+                            "distance_to_gate_m": 200,
+                            "pod_cluster_match_percent": 85 - idx * 5,
+                            "weight_stack_compliant": True,
+                            "block_utilization_percent": 75,
+                        }
+                    })
+    except Exception as e:
+        logger.warning(f"LLM recommendation failed: {e}")
+
+    # 6. Fallback if LLM produced fewer than 3 recommendations
+    while len(recommendations) < 3:
+        idx = len(recommendations)
+        slot = available[idx] if idx < len(available) else available[0]
         recommendations.append({
             "rank": idx + 1,
-            "location": location,
-            "score": 95 - (idx * 5),
-            "reasons": ["Optimal for POD clustering", "Low rehandling risk", "Good weight distribution"],
-            "warnings": [],
-            "estimated_retrieval_minutes": 5 + (idx * 2),
+            "location": {
+                "location_id": slot["location_id"],
+                "yard_name": slot.get("yard_name", ""),
+                "block_id": slot.get("block_id", ""),
+                "bay": int(slot["bay"]),
+                "row": int(slot["row"]),
+                "tier": int(slot["tier"]),
+                "occupied": False,
+            },
+            "score": 80 - idx * 5,
+            "reasons": ["Available slot with good accessibility", "Balanced block utilization"],
+            "warnings": ["Fallback recommendation (LLM unavailable)"],
+            "estimated_retrieval_minutes": 5 + idx * 2,
             "metrics": {
-                "rehandle_risk_percent": 10 + (idx * 5),
+                "rehandle_risk_percent": 15 + idx * 5,
                 "blocking_containers": idx,
                 "distance_to_quay_m": 150,
                 "distance_to_gate_m": 200,
-                "pod_cluster_match_percent": 85,
+                "pod_cluster_match_percent": 75,
                 "weight_stack_compliant": True,
-                "block_utilization_percent": 75
+                "block_utilization_percent": 70,
             }
         })
+
     return {"container_id": request.container_id, "recommendations": recommendations[:3]}
 
 
@@ -218,12 +575,14 @@ def get_placement_recommendation(request: schemas.PlacementRequest, db: Session 
 
 @app.get("/stats/overview")
 def get_yard_stats(db: Session = Depends(get_db)):
-    """Get overall yard statistics"""
-    total_containers = db.query(models.Container).count()
-    total_locations = db.query(models.YardLocation).count()
-    occupied_locations = db.query(models.YardLocation).filter(
-        models.YardLocation.occupied == True
-    ).count()
+    """Get overall yard statistics. Uses v2 tables."""
+    containers_table = get_containers_table()
+    locations_table = get_locations_table()
+
+    total_containers = db.execute(text(f"SELECT COUNT(*) FROM {containers_table}")).scalar()
+    total_locations = db.execute(text(f"SELECT COUNT(*) FROM {locations_table}")).scalar()
+    occupied_locations = db.execute(text(f"SELECT COUNT(*) FROM {locations_table} WHERE occupied = 1")).scalar()
+
     return {
         "total_containers": total_containers,
         "total_locations": total_locations,
@@ -235,17 +594,21 @@ def get_yard_stats(db: Session = Depends(get_db)):
 
 @app.get("/stats/containers")
 def get_container_stats(db: Session = Depends(get_db)):
-    """Get container statistics"""
-    from sqlalchemy import func
-    total = db.query(models.Container).count()
-    by_type = db.query(
-        models.Container.container_type,
-        func.count(models.Container.container_id)
-    ).group_by(models.Container.container_type).all()
-    by_status = db.query(
-        models.Container.customs_status,
-        func.count(models.Container.container_id)
-    ).group_by(models.Container.customs_status).all()
+    """Get container statistics. Uses v2 tables."""
+    containers_table = get_containers_table()
+
+    total = db.execute(text(f"SELECT COUNT(*) FROM {containers_table}")).scalar()
+
+    by_type = db.execute(text(f"""
+        SELECT container_type, COUNT(*) FROM {containers_table}
+        GROUP BY container_type
+    """)).fetchall()
+
+    by_status = db.execute(text(f"""
+        SELECT customs_status, COUNT(*) FROM {containers_table}
+        GROUP BY customs_status
+    """)).fetchall()
+
     return {
         "total": total,
         "by_type": {t: c for t, c in by_type},

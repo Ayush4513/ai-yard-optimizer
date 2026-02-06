@@ -183,14 +183,24 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
       detailBlock ?? undefined
     );
 
-    if (error) {
+    // Hard-block only for occupied slots and floating containers — everything else becomes a warning
+    const hardBlockRules = ["Location Must Be Available", "No Floating Containers"];
+    if (error && hardBlockRules.includes(error.rule_name)) {
       setValidationError(error.message);
       toast.error(error.message);
       return;
     }
 
+    // Allow selection — soft rule violations become AI warnings
     setSelectedLocation(location);
     setValidationError(null);
+
+    const warnings: string[] = [];
+
+    // Add soft validation error as a warning
+    if (error) {
+      warnings.push(error.message);
+    }
 
     // Check if this is a recommended location or manual selection
     const isRecommended = recommendations.some(
@@ -198,9 +208,12 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
     );
 
     if (!isRecommended && recommendations.length > 0) {
-      const warnings = generateManualSelectionWarnings(container, location, recommendations, detailBlock);
+      warnings.push(...generateManualSelectionWarnings(container, location, recommendations, detailBlock));
+    }
+
+    if (warnings.length > 0) {
       setManualSelectionWarnings(warnings);
-      toast.success("Location validated — review AI analysis below");
+      toast.success("Location selected — review AI warnings below");
     } else {
       setManualSelectionWarnings([]);
       toast.success("Location validated successfully!");

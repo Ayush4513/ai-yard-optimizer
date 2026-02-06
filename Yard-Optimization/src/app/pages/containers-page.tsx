@@ -37,7 +37,9 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { ContainerStackingWorkflow } from "@/app/components/container-stacking-workflow";
+import { LocationSelectionStep } from "@/app/components/location-selection-step";
 import { ContainerDetailsModal } from "@/app/components/container-details-modal";
+import type { Container } from "@/app/types/yard-optimization";
 
 // Mock container data
 const incomingContainers = [
@@ -239,6 +241,9 @@ export function ContainersPage() {
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
 
+  // Assign Location flow state
+  const [assigningContainer, setAssigningContainer] = useState<Container | null>(null);
+
   // Real data from database
   const [allContainers, setAllContainers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -266,6 +271,37 @@ export function ContainersPage() {
   // Refresh after workflow closes
   const handleWorkflowClose = () => {
     setIsWorkflowOpen(false);
+    loadContainers();
+  };
+
+  // Open Assign Location flow for an existing container
+  const handleAssignLocation = (rawContainer: any) => {
+    const c: Container = {
+      container_id: rawContainer.container_id,
+      container_number: rawContainer.container_number || "",
+      iso_code: rawContainer.iso_code || "42G1",
+      size_teu: rawContainer.size_teu || 2,
+      container_type: rawContainer.container_type || "Dry",
+      load_status: rawContainer.load_status || "Full",
+      weight_mt: rawContainer.weight_mt || 0,
+      weight_class: rawContainer.weight_class || "Medium",
+      cargo_description: rawContainer.cargo_description || "",
+      type: rawContainer.type || "export_container",
+      customs_status: rawContainer.customs_status || "Pending",
+      hazmat_flag: !!rawContainer.hazmat_flag,
+      reefer_flag: !!rawContainer.reefer_flag,
+      shipping_line: rawContainer.shipping_line,
+      pod: rawContainer.pod,
+      pod_priority: rawContainer.pod_priority,
+      vessel_id: rawContainer.vessel_id,
+      voyage_id: rawContainer.voyage_id,
+      gate_in_time: rawContainer.gate_in_time,
+    };
+    setAssigningContainer(c);
+  };
+
+  const handleAssignLocationClose = () => {
+    setAssigningContainer(null);
     loadContainers();
   };
 
@@ -313,6 +349,32 @@ export function ContainersPage() {
   // Show workflow instead of main page when open
   if (isWorkflowOpen) {
     return <ContainerStackingWorkflow onClose={handleWorkflowClose} />;
+  }
+
+  // Show Assign Location view for an existing container
+  if (assigningContainer) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gray-50">
+        <div className="sticky top-0 z-10 border-b bg-white px-6 py-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <Package className="h-8 w-8 text-blue-600" />
+            <div>
+              <h1 className="text-2xl font-bold">Assign Location</h1>
+              <p className="text-sm text-muted-foreground">
+                Select a yard location for container {assigningContainer.container_number}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 px-6 py-6">
+          <LocationSelectionStep
+            container={assigningContainer}
+            onBack={handleAssignLocationClose}
+            onConfirm={handleAssignLocationClose}
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -498,9 +560,9 @@ export function ContainersPage() {
                                 <Eye className="mr-2 h-4 w-4" />
                                 View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleAssignLocation(container)}>
                                 <MapPin className="mr-2 h-4 w-4" />
-                                Pre-assign Location
+                                Assign Location
                               </DropdownMenuItem>
                               <DropdownMenuItem>
                                 <AlertCircle className="mr-2 h-4 w-4" />
@@ -593,9 +655,9 @@ export function ContainersPage() {
                                 <Eye className="mr-2 h-4 w-4" />
                                 View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleAssignLocation(container)}>
                                 <MapPin className="mr-2 h-4 w-4" />
-                                Pre-assign Location
+                                Assign Location
                               </DropdownMenuItem>
                               <DropdownMenuItem>
                                 <AlertCircle className="mr-2 h-4 w-4" />

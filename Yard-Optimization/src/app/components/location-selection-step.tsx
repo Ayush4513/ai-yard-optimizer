@@ -98,10 +98,38 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
   }, [container]);
 
   const handleLocationSelect = (location: YardLocation) => {
+    // Build allLocations from detailBlock for stack integrity validation
+    let allLocations: YardLocation[] | undefined;
+    if (detailBlock) {
+      allLocations = [];
+      const bays = detailBlock.bays || 1;
+      const rows = detailBlock.rows || 1;
+      const maxTier = detailBlock.max_tier || 5;
+
+      for (let bay = 1; bay <= bays; bay++) {
+        for (let row = 1; row <= rows; row++) {
+          for (let tier = 1; tier <= maxTier; tier++) {
+            const occupiedLoc = detailBlock.occupied_locations?.find(
+              (ol) => ol.bay === bay && ol.row === row && ol.tier === tier
+            );
+            allLocations.push({
+              location_id: `${detailBlock.block_id}-${String(bay).padStart(2, '0')}-${String(row).padStart(2, '0')}-${tier}`,
+              yard_name: detailBlock.yard_name,
+              block_id: detailBlock.block_id,
+              bay,
+              row,
+              tier,
+              occupied: !!occupiedLoc,
+            });
+          }
+        }
+      }
+    }
+
     const error = validateLocation(
       container,
       location,
-      detailBlock?.locations,
+      allLocations,
       detailBlock ?? undefined
     );
 

@@ -91,6 +91,8 @@ export function YardDetailView({
     // Build a YardLocation object for callbacks (empty slot case)
     const location: YardLocation = {
       location_id: locationId,
+      yard_name: block.yard_name,
+      block_id: block.block_id,
       bay,
       row,
       tier,

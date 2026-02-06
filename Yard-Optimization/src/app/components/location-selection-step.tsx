@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   MapIcon,
   Loader2,
+  Info,
 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/app/components/ui/card";
@@ -37,6 +38,54 @@ interface LocationSelectionStepProps {
   onConfirm: () => void;
 }
 
+function generateManualSelectionWarnings(
+  container: Container,
+  location: YardLocation,
+  recommendations: AIRecommendation[],
+  block: Block | null,
+): string[] {
+  const warnings: string[] = [];
+  const bestRec = recommendations[0];
+
+  if (!bestRec) return warnings;
+
+  // Movement type vs yard side mismatch
+  if (container.type === "export_container" && location.yard_name && !location.yard_name.startsWith("SS")) {
+    warnings.push("Export containers are optimally placed in Sea-Side (SS) blocks for quay proximity — this location is Land-Side");
+  }
+  if (container.type === "import_container" && location.yard_name && !location.yard_name.startsWith("LS")) {
+    warnings.push("Import containers are optimally placed in Land-Side (LS) blocks for gate proximity — this location is Sea-Side");
+  }
+
+  // Higher tier = higher rehandle risk
+  if (location.tier > 2) {
+    warnings.push(`Tier ${location.tier} has higher rehandle risk — AI recommended tier ${bestRec.location.tier} for lower retrieval time`);
+  }
+
+  // Heavy container on high tier
+  if (container.weight_class === "Heavy" && location.tier > 1) {
+    warnings.push("Heavy containers on higher tiers create safety concerns and increase crane load during retrieval");
+  }
+
+  // Compare with AI's best score
+  warnings.push(`AI's top pick (${bestRec.location.location_id}) scored ${bestRec.score}/100 with ${bestRec.estimated_retrieval_minutes} min retrieval — this manual selection was not in AI's top 3`);
+
+  // POD clustering
+  if (container.pod && bestRec.metrics.pod_cluster_match_percent > 50) {
+    warnings.push(`AI recommendation has ${bestRec.metrics.pod_cluster_match_percent}% POD cluster match for ${container.pod} — manual selection may reduce port grouping`);
+  }
+
+  // Block utilization warning
+  if (block && block.total_slots > 0) {
+    const utilization = Math.round((block.occupied_slots / block.total_slots) * 100);
+    if (utilization > 75) {
+      warnings.push(`Block utilization is ${utilization}% — high utilization increases future rehandle probability`);
+    }
+  }
+
+  return warnings;
+}
+
 export function LocationSelectionStep({ container, onBack, onConfirm }: LocationSelectionStepProps) {
   const [selectedLocation, setSelectedLocation] = useState<YardLocation | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -47,6 +96,7 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
   const [detailBlock, setDetailBlock] = useState<Block | null>(null);
   const [colorCodingMode, setColorCodingMode] = useState<ColorCodingMode>("shipping_line");
   const [hoveredLocation, setHoveredLocation] = useState<string | null>(null);
+  const [manualSelectionWarnings, setManualSelectionWarnings] = useState<string[]>([]);
 
   // Dynamic data from API
   const [seaSideYards, setSeaSideYards] = useState<Yard[]>([]);
@@ -141,7 +191,20 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
 
     setSelectedLocation(location);
     setValidationError(null);
-    toast.success("Location validated successfully!");
+
+    // Check if this is a recommended location or manual selection
+    const isRecommended = recommendations.some(
+      (r) => r.location.location_id === location.location_id
+    );
+
+    if (!isRecommended && recommendations.length > 0) {
+      const warnings = generateManualSelectionWarnings(container, location, recommendations, detailBlock);
+      setManualSelectionWarnings(warnings);
+      toast.success("Location validated — review AI analysis below");
+    } else {
+      setManualSelectionWarnings([]);
+      toast.success("Location validated successfully!");
+    }
   };
 
   const handleBlockClick = async (block: Block) => {
@@ -190,11 +253,12 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
     // false "stack integrity" errors when detailBlock is not loaded yet
     setSelectedLocation(recommendation.location);
     setValidationError(null);
+    setManualSelectionWarnings([]);
     toast.success("Location validated successfully!");
 
-    // Auto-navigate to the recommended block's detail view
+    // Always navigate to the recommended block's detail view (even if already in detail mode)
     const blockId = recommendation.location.block_id;
-    if (blockId && viewMode !== "detail") {
+    if (blockId) {
       try {
         setLoadingDetail(true);
         const blockDetail = await blockAPI.getDetails(blockId);
@@ -273,6 +337,25 @@ export function LocationSelectionStep({ container, onBack, onConfirm }: Location
           <AlertTitle className="text-green-900">Location Validated</AlertTitle>
           <AlertDescription className="text-green-700">
             Location validated successfully! Review the metrics below and click 'Confirm & Save' to assign.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* AI Analysis Warning for Manual Selections */}
+      {selectedLocation && !validationError && manualSelectionWarnings.length > 0 && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <Sparkles className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-900">AI Analysis — Manual Selection</AlertTitle>
+          <AlertDescription className="text-amber-700">
+            <div className="mt-1 space-y-1">
+              {manualSelectionWarnings.map((warning, idx) => (
+                <div key={idx} className="flex items-start gap-2 text-sm">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <span>{warning}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs">You can still proceed with this location or select an AI-recommended one above.</p>
           </AlertDescription>
         </Alert>
       )}

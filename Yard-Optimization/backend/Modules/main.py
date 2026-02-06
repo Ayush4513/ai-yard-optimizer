@@ -427,35 +427,64 @@ def get_placement_recommendation(request: schemas.PlacementRequest, db: Session 
     locations_table = get_locations_table()
     blocks_table = get_blocks_table()
 
-    # 1. Get available slots (unoccupied locations) with block info
+    # ── 1. Available slots with block metadata ──
     available = db.execute(text(f"""
-        SELECT yl.*, b.block_type, b.reefer_plugs, b.hazmat_certified
+        SELECT yl.*, b.block_type, b.reefer_plugs, b.hazmat_certified, b.yard_name as b_yard_name,
+               b.total_slots, b.occupied_slots, b.bays, b.rows, b.max_tier, b.primary_use
         FROM {locations_table} yl
         JOIN {blocks_table} b ON yl.block_id = b.block_id
         WHERE yl.occupied = 0
-        ORDER BY yl.block_id, yl.bay, yl.row, yl.tier
-        LIMIT 50
+        ORDER BY yl.tier ASC, yl.block_id, yl.bay, yl.row
+        LIMIT 100
     """)).mappings().all()
 
     if not available:
         raise HTTPException(status_code=404, detail="No available locations found")
 
-    # 2. Get yard state (occupancy per block)
+    # ── 2. Block stats with utilization ──
     block_stats = db.execute(text(f"""
-        SELECT b.block_id, b.block_type, b.total_slots, b.reefer_plugs, b.hazmat_certified,
-               COUNT(c.container_id) as container_count
+        SELECT b.block_id, b.yard_name, b.block_type, b.total_slots, b.occupied_slots,
+               b.reefer_plugs, b.hazmat_certified, b.primary_use,
+               ROUND(CAST(b.occupied_slots AS FLOAT) / b.total_slots * 100, 1) as util_pct
         FROM {blocks_table} b
-        LEFT JOIN {containers_table} c ON c.block_id = b.block_id
-        GROUP BY b.block_id
     """)).mappings().all()
+    block_stats_map = {bs["block_id"]: dict(bs) for bs in block_stats}
 
-    # 3. Get ChromaDB context (yard rules)
+    # ── 3. POD clustering: containers with same POD per block ──
+    pod_cluster = {}
+    if request.pod:
+        pod_rows = db.execute(text(f"""
+            SELECT block_id, COUNT(*) as cnt
+            FROM {containers_table}
+            WHERE pod = :pod AND block_id IS NOT NULL
+            GROUP BY block_id
+            ORDER BY cnt DESC
+        """), {"pod": request.pod}).fetchall()
+        pod_cluster = {r[0]: r[1] for r in pod_rows}
+
+    # ── 4. Weight context: containers below each available slot ──
+    stack_context = {}
+    for slot in available[:60]:
+        if int(slot["tier"]) > 1:
+            below = db.execute(text(f"""
+                SELECT c.weight_class, c.pod, c.container_type
+                FROM {locations_table} yl
+                JOIN {containers_table} c ON yl.container_id = c.container_id
+                WHERE yl.block_id = :bid AND yl.bay = :bay AND yl.row = :row AND yl.tier < :tier
+                ORDER BY yl.tier ASC
+            """), {"bid": slot["block_id"], "bay": slot["bay"], "row": slot["row"], "tier": slot["tier"]}).fetchall()
+            if below:
+                stack_context[slot["location_id"]] = [
+                    {"weight_class": r[0], "pod": r[1], "type": r[2]} for r in below
+                ]
+
+    # ── 5. ChromaDB yard rules context ──
     rules_context = ""
     try:
         rules_col = chroma_client.client.get_collection("yard_rules")
         if rules_col.count() > 0:
             results = rules_col.query(
-                query_texts=[f"placement rules for {request.container_type or 'general'} container"],
+                query_texts=[f"placement rules for {request.container_type or 'general'} {request.weight_class or ''} container going to {request.pod or 'any port'}"],
                 n_results=5
             )
             if results and results.get("documents"):
@@ -463,97 +492,130 @@ def get_placement_recommendation(request: schemas.PlacementRequest, db: Session 
     except Exception:
         logger.debug("ChromaDB yard_rules query failed, continuing without context")
 
-    # 4. Build LLM prompt
-    available_summary = {}
-    for slot in available[:50]:
-        bid = slot["block_id"]
-        if bid not in available_summary:
-            available_summary[bid] = {"count": 0, "type": slot.get("block_type", "General")}
-        available_summary[bid]["count"] += 1
+    # ── 6. Build rich LLM prompt ──
+    # Block overview with real utilization
+    block_lines = []
+    for bs in block_stats:
+        pod_count = pod_cluster.get(bs["block_id"], 0)
+        pod_info = f", {pod_count} containers with same POD ({request.pod})" if pod_count else ""
+        block_lines.append(
+            f"  - {bs['block_id']} ({bs['yard_name']}): {bs['block_type']} block, "
+            f"{bs['occupied_slots']}/{bs['total_slots']} occupied ({bs['util_pct']}%){pod_info}"
+        )
+    block_overview = "\n".join(block_lines)
 
-    block_state_text = "\n".join([
-        f"- {bs['block_id']}: {bs['block_type']}, {bs['container_count']}/{bs['total_slots']} slots used"
-        for bs in block_stats
-    ])
+    # Available slots with stack context (top 30 for prompt brevity)
+    slot_lines = []
+    for s in available[:30]:
+        loc_id = s["location_id"]
+        tier = int(s["tier"])
+        stack_info = ""
+        if loc_id in stack_context:
+            below_items = stack_context[loc_id]
+            below_desc = ", ".join([f"T{i+1}:{c['weight_class']}/{c['pod'] or '?'}" for i, c in enumerate(below_items)])
+            stack_info = f" [below: {below_desc}]"
+        elif tier == 1:
+            stack_info = " [ground level - empty stack]"
+        slot_lines.append(
+            f"  - {loc_id} (block={s['block_id']}, tier={tier}, type={s.get('block_type', '?')}){stack_info}"
+        )
+    slots_text = "\n".join(slot_lines)
 
-    available_text = "\n".join([
-        f"- {bid}: {info['count']} available slots ({info['type']})"
-        for bid, info in available_summary.items()
-    ])
+    # Container type matching guidance
+    type_guidance = ""
+    if request.reefer_flag:
+        type_guidance = "CRITICAL: This is a REEFER container — MUST be placed in a Reefer block (LS1-B1 or SS1-B1)."
+    elif request.hazmat_flag:
+        type_guidance = "CRITICAL: This is a HAZMAT container — MUST be placed in a Hazmat block (LS4-B1 or SS5-B4)."
+    elif request.container_type == "OOG":
+        type_guidance = "CRITICAL: This is an OOG container — MUST be placed in the OOG yard."
 
-    slot_ids_text = "\n".join([f"- {s['location_id']}" for s in available[:20]])
+    # Weight stacking guidance
+    weight_guidance = ""
+    if request.weight_class == "Heavy":
+        weight_guidance = "Weight rule: Heavy containers (>=20MT) must NOT be placed above tier 2."
+    elif request.weight_class == "Light":
+        weight_guidance = "Weight rule: Light containers should be placed on higher tiers (above heavier ones)."
 
-    prompt = f"""You are a container yard optimization expert. Recommend the TOP 3 placement locations for this container.
+    prompt = f"""You are a container yard optimization expert at a real port terminal. Analyze the yard state and recommend the TOP 3 optimal placement locations.
 
-Container Details:
-- Container ID: {request.container_id}
-- Type: {request.container_type or 'General'}
-- POD: {request.pod or 'Unknown'}
+═══ CONTAINER TO PLACE ═══
+- ID: {request.container_id}
+- Type: {request.container_type or 'Dry'}
+- Port of Discharge (POD): {request.pod or 'Unknown'}
 - Weight Class: {request.weight_class or 'Medium'}
 - Hazmat: {request.hazmat_flag}
 - Reefer: {request.reefer_flag}
 
-Yard Rules:
-{rules_context or 'Standard stacking rules apply.'}
+═══ PLACEMENT CONSTRAINTS ═══
+{type_guidance}
+{weight_guidance}
+- Stack integrity: lower tiers must be occupied before placing on higher tiers
+- Heavier containers go on lower tiers, lighter on top
+- Group containers by same POD in the same block/bay for efficient vessel loading
+- Sea-Side (SS) blocks are closer to the quay (better for exports)
+- Land-Side (LS) blocks are closer to the gate (better for imports)
 
-Block Occupancy:
-{block_state_text}
+═══ YARD RULES (from knowledge base) ═══
+{rules_context or 'Standard terminal stacking rules apply.'}
 
-Available Slots by Block:
-{available_text}
+═══ CURRENT BLOCK STATE ═══
+{block_overview}
 
-Available Slot IDs (first 20):
-{slot_ids_text}
+═══ AVAILABLE SLOTS (with stack context) ═══
+{slots_text}
 
-Provide exactly 3 recommendations in JSON array format:
+═══ TASK ═══
+Choose exactly 3 locations from the available slots above. For EACH recommendation, provide:
+- A placement SCORE (0-100) reflecting overall optimality
+- 2-4 specific REASONS referencing the actual data (e.g., "Block SS3-B1 already has 29 Singapore containers — best POD clustering")
+- WARNINGS for any trade-offs (e.g., "Tier 3 placement — 2 containers below will need rehandling for retrieval")
+- REHANDLE_RISK (0-100) based on tier height and blocking containers
+- Estimated retrieval time in minutes
+
+Return ONLY a JSON array:
 [
-  {{"location_id": "BLOCK-BAY-ROW-TIER", "block_id": "BLOCK_ID", "bay": BAY_NUMBER, "row": ROW_NUMBER, "tier": TIER_NUMBER, "score": 0-100, "reasons": ["reason1", "reason2"], "warnings": [], "rehandle_risk": 0-100, "estimated_retrieval_minutes": MINUTES}},
+  {{"location_id": "...", "block_id": "...", "bay": N, "row": N, "tier": N, "score": N, "reasons": ["...", "..."], "warnings": ["..."], "rehandle_risk": N, "estimated_retrieval_minutes": N, "pod_cluster_pct": N, "weight_compliant": true/false}},
   ...
-]
+]"""
 
-Pick locations from the available slot IDs listed above. Optimize for:
-1. Minimize rehandle risk
-2. POD clustering
-3. Weight stacking compliance
-4. Block utilization balance"""
-
-    # 5. Call LLM and parse response
+    # ── 7. Call LLM and parse response ──
     recommendations = []
     try:
         llm = get_default_llm()
         if llm:
             response = llm.generate(prompt)
             logger.info(f"LLM response received ({len(response)} chars)")
-            # Parse JSON array from LLM response
+
             parsed = None
-            # Strategy 1: Try extracting from ```json ... ``` code block
+            # Strategy 1: code block extraction
             code_match = re_lib.search(r'```(?:json)?\s*([\s\S]*?)```', response)
             if code_match:
-                code_content = code_match.group(1).strip()
                 try:
-                    parsed = json_lib.loads(code_content)
-                except json_lib.JSONDecodeError as e:
-                    logger.debug(f"Code block JSON parse failed: {e}")
-            # Strategy 2: Find balanced JSON array brackets
+                    parsed = json_lib.loads(code_match.group(1).strip())
+                except json_lib.JSONDecodeError:
+                    pass
+            # Strategy 2: balanced bracket matching
             if parsed is None:
                 start_idx = response.find('[')
                 if start_idx != -1:
                     depth = 0
                     end_idx = start_idx
                     for i in range(start_idx, len(response)):
-                        if response[i] == '[':
-                            depth += 1
+                        if response[i] == '[': depth += 1
                         elif response[i] == ']':
                             depth -= 1
                             if depth == 0:
                                 end_idx = i + 1
                                 break
-                    json_str = response[start_idx:end_idx]
-                    parsed = json_lib.loads(json_str)
+                    try:
+                        parsed = json_lib.loads(response[start_idx:end_idx])
+                    except json_lib.JSONDecodeError:
+                        pass
+
             if parsed:
                 for idx, rec in enumerate(parsed[:3]):
                     loc_id = rec.get("location_id", "")
-                    # Find matching available slot
                     matching = [s for s in available if s["location_id"] == loc_id]
                     if matching:
                         slot = matching[0]
@@ -561,61 +623,83 @@ Pick locations from the available slot IDs listed above. Optimize for:
                         slot = available[idx] if idx < len(available) else available[0]
                         loc_id = slot["location_id"]
 
+                    bid = slot.get("block_id", "")
+                    bs = block_stats_map.get(bid, {})
+                    tier = int(slot["tier"])
+                    is_sea_side = bid.startswith("SS")
+                    pod_in_block = pod_cluster.get(bid, 0)
+                    total_pod = sum(pod_cluster.values()) if pod_cluster else 1
+                    pod_pct = rec.get("pod_cluster_pct", round(pod_in_block / max(total_pod, 1) * 100))
+
                     recommendations.append({
                         "rank": idx + 1,
                         "location": {
                             "location_id": loc_id,
                             "yard_name": slot.get("yard_name", ""),
-                            "block_id": slot.get("block_id", ""),
+                            "block_id": bid,
                             "bay": int(slot["bay"]),
                             "row": int(slot["row"]),
-                            "tier": int(slot["tier"]),
+                            "tier": tier,
                             "occupied": False,
                         },
                         "score": rec.get("score", 90 - idx * 5),
                         "reasons": rec.get("reasons", ["LLM recommended"]),
                         "warnings": rec.get("warnings", []),
-                        "estimated_retrieval_minutes": rec.get("estimated_retrieval_minutes", 5 + idx * 2),
+                        "estimated_retrieval_minutes": rec.get("estimated_retrieval_minutes", 3 + (tier - 1) * 2),
                         "metrics": {
-                            "rehandle_risk_percent": rec.get("rehandle_risk", 10 + idx * 5),
-                            "blocking_containers": idx,
-                            "distance_to_quay_m": 150,
-                            "distance_to_gate_m": 200,
-                            "pod_cluster_match_percent": 85 - idx * 5,
-                            "weight_stack_compliant": True,
-                            "block_utilization_percent": 75,
+                            "rehandle_risk_percent": rec.get("rehandle_risk", min(tier * 15, 80)),
+                            "blocking_containers": max(tier - 1, 0),
+                            "distance_to_quay_m": 80 + idx * 30 if is_sea_side else 350 + idx * 30,
+                            "distance_to_gate_m": 350 + idx * 30 if is_sea_side else 80 + idx * 30,
+                            "pod_cluster_match_percent": pod_pct,
+                            "weight_stack_compliant": rec.get("weight_compliant", True),
+                            "block_utilization_percent": round(float(bs.get("util_pct", 70))),
                         }
                     })
     except Exception as e:
         logger.warning(f"LLM recommendation failed: {e}")
 
-    # 6. Fallback if LLM produced fewer than 3 recommendations
+    # ── 8. Fallback if LLM produced fewer than 3 ──
     while len(recommendations) < 3:
         idx = len(recommendations)
         slot = available[idx] if idx < len(available) else available[0]
+        bid = slot.get("block_id", "")
+        bs = block_stats_map.get(bid, {})
+        tier = int(slot["tier"])
+        is_sea_side = bid.startswith("SS")
+        pod_in_block = pod_cluster.get(bid, 0)
+        total_pod = sum(pod_cluster.values()) if pod_cluster else 1
+
         recommendations.append({
             "rank": idx + 1,
             "location": {
                 "location_id": slot["location_id"],
                 "yard_name": slot.get("yard_name", ""),
-                "block_id": slot.get("block_id", ""),
+                "block_id": bid,
                 "bay": int(slot["bay"]),
                 "row": int(slot["row"]),
-                "tier": int(slot["tier"]),
+                "tier": tier,
                 "occupied": False,
             },
             "score": 80 - idx * 5,
-            "reasons": ["Available slot with good accessibility", "Balanced block utilization"],
-            "warnings": ["Fallback recommendation (LLM unavailable)"],
-            "estimated_retrieval_minutes": 5 + idx * 2,
+            "reasons": [
+                f"Available slot at tier {tier} in {bs.get('block_type', 'General')} block",
+                f"Block utilization: {bs.get('util_pct', '?')}%",
+                f"{pod_in_block} same-POD containers already in this block" if pod_in_block else "Balanced block utilization",
+            ],
+            "warnings": ["Fallback recommendation (LLM unavailable)"] if idx == 0 else [
+                "Fallback recommendation",
+                f"Tier {tier} — {tier - 1} container(s) below will need rehandling" if tier > 1 else ""
+            ],
+            "estimated_retrieval_minutes": 3 + (tier - 1) * 2,
             "metrics": {
-                "rehandle_risk_percent": 15 + idx * 5,
-                "blocking_containers": idx,
-                "distance_to_quay_m": 150,
-                "distance_to_gate_m": 200,
-                "pod_cluster_match_percent": 75,
+                "rehandle_risk_percent": min(tier * 15, 80),
+                "blocking_containers": max(tier - 1, 0),
+                "distance_to_quay_m": 80 + idx * 30 if is_sea_side else 350 + idx * 30,
+                "distance_to_gate_m": 350 + idx * 30 if is_sea_side else 80 + idx * 30,
+                "pod_cluster_match_percent": round(pod_in_block / max(total_pod, 1) * 100),
                 "weight_stack_compliant": True,
-                "block_utilization_percent": 70,
+                "block_utilization_percent": round(float(bs.get("util_pct", 70))),
             }
         })
 

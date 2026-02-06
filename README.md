@@ -304,7 +304,7 @@ Rules are stored in ChromaDB `yard_rules` collection for semantic search.
 
 This historical data enables:
 - Pattern recognition for similar scenarios
-- Prediction of reshuffle risks
+- Prediction of rehandle risks
 - Learning from past decisions
 - Dwell time predictions
 

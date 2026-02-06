@@ -286,11 +286,11 @@ export function StackingRulesSection({ stackingRules, setStackingRules }: Stacki
       color: "indigo",
       rules: [
         {
-          id: "minimizeReshuffles",
-          label: "Minimize Reshuffles",
+          id: "minimizeRehandles",
+          label: "Minimize Rehandles",
           description: "Optimize stacking to reduce future container re-handling",
-          enabled: stackingRules.minimizeReshuffles,
-          onChange: (checked) => setStackingRules({ ...stackingRules, minimizeReshuffles: checked }),
+          enabled: stackingRules.minimizeRehandles,
+          onChange: (checked) => setStackingRules({ ...stackingRules, minimizeRehandles: checked }),
         },
         {
           id: "balanceBlockUtilization",
@@ -323,10 +323,10 @@ export function StackingRulesSection({ stackingRules, setStackingRules }: Stacki
       ],
       numericRules: [
         {
-          id: "maxReshuffleThreshold",
-          label: "Max Reshuffle Threshold",
-          value: stackingRules.maxReshuffleThreshold,
-          onChange: (value) => setStackingRules({ ...stackingRules, maxReshuffleThreshold: value }),
+          id: "maxRehandleThreshold",
+          label: "Max Rehandle Threshold",
+          value: stackingRules.maxRehandleThreshold,
+          onChange: (value) => setStackingRules({ ...stackingRules, maxRehandleThreshold: value }),
           unit: "moves",
         },
       ],

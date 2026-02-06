@@ -19,3 +19,6 @@ chroma_db/
 *.db
 *.sqlite
 *.sqlite3
+data/*.json
+data/sqlite/
+nul

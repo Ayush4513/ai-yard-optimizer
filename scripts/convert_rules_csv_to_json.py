@@ -89,122 +89,123 @@ def convert_hazmat_rules(csv_path: str) -> List[Dict]:
 def convert_master_rules(csv_path: str) -> List[Dict]:
     """Convert master stacking rules CSV to JSON format."""
     rules = []
-    
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            # Map CSV columns to JSON format
-            rule_id = row.get("Rule ID", "").strip()
-            if not rule_id:
-                continue
-            
-            # Determine category (try multiple variations)
-            category = (row.get("Category") or row.get("category") or 
-                       row.get("CATEGORY") or "").strip()
-            category_mapping = {
-                "Commercial Grouping": "operational_rule",
-                "Operational Grouping": "operational_rule",
-                "Delivery Model": "operational_rule",
-                "Flow Segregation": "operational_rule",
-                "Port of Delivery": "operational_rule",
-                "Size Compatibility": "physical_constraint",
-                "Weight": "physical_constraint",
-                "Height": "physical_constraint",
-                "Safety": "safety_constraint",
-                "Engineering": "safety_constraint",
-                "Hazmat": "safety_constraint",
-                "Special Cargo": "safety_constraint",
-                "Planning": "operational_rule"
-            }
-            rule_category = category_mapping.get(category, "operational_rule")
-            
-            # Determine rule type
-            rule_type_mapping = {
-                "Commercial Grouping": "grouping",
-                "Operational Grouping": "grouping",
-                "Delivery Model": "segregation",
-                "Flow Segregation": "segregation",
-                "Port of Delivery": "grouping",
-                "Size Compatibility": "stacking",
-                "Weight": "stacking",
-                "Height": "stacking",
-                "Safety": "stacking",
-                "Engineering": "stacking",
-                "Hazmat": "hazmat",
-                "Special Cargo": "special_cargo",
-                "Planning": "planning"
-            }
-            rule_type = rule_type_mapping.get(category, "stacking")
-            
-            # Map priority (try multiple variations)
-            priority_str = (row.get("Priority") or row.get("priority") or 
-                           row.get("PRIORITY") or "P2 Productivity").strip()
-            priority_mapping = {
-                "P0 Safety": "CRITICAL",
-                "P1 Regulatory": "HIGH",
-                "P2 Productivity": "MEDIUM",
-                "P3 Efficiency": "LOW"
-            }
-            priority = priority_mapping.get(priority_str, "MEDIUM")
-            
-            # Determine applicable zones (try multiple variations)
-            applies_level = (row.get("Applies Level") or row.get("applies_level") or 
-                           row.get("Applies_Level") or "").strip()
-            applicable_zones = []
-            description = (row.get("Description") or row.get("description") or "").strip()
-            if "Export" in description or "export" in description.lower():
-                applicable_zones.append("Export")
-            if "Import" in description or "import" in description.lower():
-                applicable_zones.append("Import")
-            if not applicable_zones:
-                applicable_zones = ["Export", "Import"]  # Default
-            
-            # Build rule description (try multiple variations)
-            conditions = (row.get("Conditions") or row.get("conditions") or "").strip()
-            violation_msg = (row.get("Violation Message") or row.get("violation_message") or 
-                           row.get("Violation_Message") or row.get("violation") or "").strip()
-            
-            rule_name = (row.get("Rule Name") or row.get("rule_name") or 
-                        row.get("Rule_Name") or f"Master Rule {row_num}").strip()
-            constraint = (row.get("Constraint") or row.get("constraint") or "FORBID").strip()
-            
-            rule_description = f"""
-            Rule: {rule_name}
-            Category: {category}
-            Priority: {priority_str}
-            Description: {description}
-            Applies at: {applies_level} level
-            Conditions: {conditions}
-            Constraint: {constraint}
-            Violation: {violation_msg}
-            Rule Strength: {row.get('Rule Strength') or row.get('rule_strength') or ''}
-            """.strip()
-            
-            rule = {
-                "ruleId": rule_id,
-                "ruleName": rule_name,
-                "ruleDescription": rule_description,
-                "ruleCategory": rule_category,
-                "ruleType": rule_type,
-                "priority": priority,
-                "applicableZones": applicable_zones,
-                "constraint": {
-                    "condition": conditions,
-                    "action": constraint,
-                    "errorMessage": violation_msg
-                },
-                "metadata": {
-                    "appliesLevel": applies_level,
-                    "ruleStrength": (row.get("Rule Strength") or row.get("rule_strength") or "").strip(),
-                    "constraintParams": (row.get("Constraint Params") or row.get("constraint_params") or "").strip(),
-                    "exceptions": (row.get("Exceptions") or row.get("exceptions") or "").strip(),
-                    "configVariables": (row.get("Config Variables") or row.get("config_variables") or "").strip(),
-                    "conflictResolution": (row.get("Conflict Resolution") or row.get("conflict_resolution") or "").strip(),
-                    "testCases": (row.get("Test Cases") or row.get("test_cases") or "").strip()
+
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row_num, row in enumerate(reader, start=2):
+                # Map CSV columns to JSON format
+                rule_id = row.get("Rule ID", "").strip()
+                if not rule_id:
+                    continue
+
+                # Determine category (try multiple variations)
+                category = (row.get("Category") or row.get("category") or
+                           row.get("CATEGORY") or "").strip()
+                category_mapping = {
+                    "Commercial Grouping": "operational_rule",
+                    "Operational Grouping": "operational_rule",
+                    "Delivery Model": "operational_rule",
+                    "Flow Segregation": "operational_rule",
+                    "Port of Delivery": "operational_rule",
+                    "Size Compatibility": "physical_constraint",
+                    "Weight": "physical_constraint",
+                    "Height": "physical_constraint",
+                    "Safety": "safety_constraint",
+                    "Engineering": "safety_constraint",
+                    "Hazmat": "safety_constraint",
+                    "Special Cargo": "safety_constraint",
+                    "Planning": "operational_rule"
                 }
-            }
-            
-            rules.append(rule)
+                rule_category = category_mapping.get(category, "operational_rule")
+
+                # Determine rule type
+                rule_type_mapping = {
+                    "Commercial Grouping": "grouping",
+                    "Operational Grouping": "grouping",
+                    "Delivery Model": "segregation",
+                    "Flow Segregation": "segregation",
+                    "Port of Delivery": "grouping",
+                    "Size Compatibility": "stacking",
+                    "Weight": "stacking",
+                    "Height": "stacking",
+                    "Safety": "stacking",
+                    "Engineering": "stacking",
+                    "Hazmat": "hazmat",
+                    "Special Cargo": "special_cargo",
+                    "Planning": "planning"
+                }
+                rule_type = rule_type_mapping.get(category, "stacking")
+
+                # Map priority (try multiple variations)
+                priority_str = (row.get("Priority") or row.get("priority") or
+                               row.get("PRIORITY") or "P2 Productivity").strip()
+                priority_mapping = {
+                    "P0 Safety": "CRITICAL",
+                    "P1 Regulatory": "HIGH",
+                    "P2 Productivity": "MEDIUM",
+                    "P3 Efficiency": "LOW"
+                }
+                priority = priority_mapping.get(priority_str, "MEDIUM")
+
+                # Determine applicable zones (try multiple variations)
+                applies_level = (row.get("Applies Level") or row.get("applies_level") or
+                               row.get("Applies_Level") or "").strip()
+                applicable_zones = []
+                description = (row.get("Description") or row.get("description") or "").strip()
+                if "Export" in description or "export" in description.lower():
+                    applicable_zones.append("Export")
+                if "Import" in description or "import" in description.lower():
+                    applicable_zones.append("Import")
+                if not applicable_zones:
+                    applicable_zones = ["Export", "Import"]  # Default
+
+                # Build rule description (try multiple variations)
+                conditions = (row.get("Conditions") or row.get("conditions") or "").strip()
+                violation_msg = (row.get("Violation Message") or row.get("violation_message") or
+                               row.get("Violation_Message") or row.get("violation") or "").strip()
+
+                rule_name = (row.get("Rule Name") or row.get("rule_name") or
+                            row.get("Rule_Name") or f"Master Rule {row_num}").strip()
+                constraint = (row.get("Constraint") or row.get("constraint") or "FORBID").strip()
+
+                rule_description = f"""
+                Rule: {rule_name}
+                Category: {category}
+                Priority: {priority_str}
+                Description: {description}
+                Applies at: {applies_level} level
+                Conditions: {conditions}
+                Constraint: {constraint}
+                Violation: {violation_msg}
+                Rule Strength: {row.get('Rule Strength') or row.get('rule_strength') or ''}
+                """.strip()
+
+                rule = {
+                    "ruleId": rule_id,
+                    "ruleName": rule_name,
+                    "ruleDescription": rule_description,
+                    "ruleCategory": rule_category,
+                    "ruleType": rule_type,
+                    "priority": priority,
+                    "applicableZones": applicable_zones,
+                    "constraint": {
+                        "condition": conditions,
+                        "action": constraint,
+                        "errorMessage": violation_msg
+                    },
+                    "metadata": {
+                        "appliesLevel": applies_level,
+                        "ruleStrength": (row.get("Rule Strength") or row.get("rule_strength") or "").strip(),
+                        "constraintParams": (row.get("Constraint Params") or row.get("constraint_params") or "").strip(),
+                        "exceptions": (row.get("Exceptions") or row.get("exceptions") or "").strip(),
+                        "configVariables": (row.get("Config Variables") or row.get("config_variables") or "").strip(),
+                        "conflictResolution": (row.get("Conflict Resolution") or row.get("conflict_resolution") or "").strip(),
+                        "testCases": (row.get("Test Cases") or row.get("test_cases") or "").strip()
+                    }
+                }
+
+                rules.append(rule)
     except Exception as e:
         print(f"❌ Error reading {csv_path}: {e}")
         import traceback

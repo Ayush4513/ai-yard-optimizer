@@ -211,7 +211,7 @@ export function SimulatorPage() {
                   className="w-full"
                 />
                 <p className="text-xs text-gray-600">
-                  Higher weight reduces container reshuffles but may increase dwell time
+                  Higher weight reduces container rehandles but may increase dwell time
                 </p>
               </div>
 

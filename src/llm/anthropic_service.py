@@ -91,14 +91,14 @@ Explain stacking recommendations in clear, actionable language for terminal oper
 Given this stacking recommendation:
 - Slot: {recommendation.get('slotId', 'N/A')}
 - Confidence: {recommendation.get('confidence', 0)}
-- Reshuffle Risk: {recommendation.get('reshuffleRisk', 0)}
+- Rehandle Risk: {recommendation.get('rehandleRisk', 0)}
 
 Context:
 {context}
 
 Provide a clear explanation of why this slot was recommended, including:
 1. Key factors that influenced the decision
-2. Expected benefits (reshuffle reduction, efficiency gains)
+2. Expected benefits (rehandle reduction, efficiency gains)
 3. Any risks or considerations
 """
         

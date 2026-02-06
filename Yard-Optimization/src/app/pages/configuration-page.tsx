@@ -115,7 +115,7 @@ export function ConfigurationPage() {
     visibilityRules: true,
     
     // Operational Efficiency
-    minimizeReshuffles: true,
+    minimizeRehandles: true,
     balanceBlockUtilization: true,
     
     // Policy Rules
@@ -161,9 +161,9 @@ export function ConfigurationPage() {
     bayWiseStacking: false,
     loadWindowAlignment: true,
     
-    // Reshuffle Control
-    maxReshuffleThreshold: 3,
-    reshuffleBatching: false,
+    // Rehandle Control
+    maxRehandleThreshold: 3,
+    rehandleBatching: false,
     
     // Empty Ops
     emptyConsolidation: true,

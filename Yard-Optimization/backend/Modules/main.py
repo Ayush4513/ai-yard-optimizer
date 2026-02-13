@@ -10,10 +10,21 @@ import os
 import json as json_lib
 import re as re_lib
 
-from Modules.database.neo4j_client import neo4j_client
 from Modules.database.chroma_client import chroma_client
-from Modules.rag.retrieval_chain import HybridRetrievalChain
 from Modules.llm.llm_client import get_default_llm
+
+# Lazy imports for heavy dependencies (may not be available on lightweight deploys)
+try:
+    from Modules.database.neo4j_client import neo4j_client
+except ImportError:
+    neo4j_client = None
+    logging.getLogger(__name__).warning("Neo4j client not available (neo4j package missing)")
+
+try:
+    from Modules.rag.retrieval_chain import HybridRetrievalChain
+except ImportError:
+    HybridRetrievalChain = None
+    logging.getLogger(__name__).warning("RAG retrieval chain not available (sentence-transformers missing)")
 
 # SQLAlchemy (container DB)
 from Database.database import engine, get_db
@@ -777,19 +788,22 @@ async def startup_event():
         logger.warning(f"SQLite database initialization failed (non-critical): {e}")
         logger.info("Application will continue without SQLite CRUD features")
 
-    # Initialize Neo4j
-    max_retries = 5
-    for attempt in range(max_retries):
-        if neo4j_client.connect():
-            neo4j_client.initialize_schema()
-            logger.info("Neo4j initialized successfully")
-            break
-        else:
-            if attempt < max_retries - 1:
-                logger.warning(f"Failed to connect to Neo4j (attempt {attempt + 1}/{max_retries}), retrying...")
-                time.sleep(3)
+    # Initialize Neo4j (skip if not available)
+    if neo4j_client is not None:
+        max_retries = 5
+        for attempt in range(max_retries):
+            if neo4j_client.connect():
+                neo4j_client.initialize_schema()
+                logger.info("Neo4j initialized successfully")
+                break
             else:
-                logger.error("Failed to initialize Neo4j after multiple attempts")
+                if attempt < max_retries - 1:
+                    logger.warning(f"Failed to connect to Neo4j (attempt {attempt + 1}/{max_retries}), retrying...")
+                    time.sleep(3)
+                else:
+                    logger.error("Failed to initialize Neo4j after multiple attempts")
+    else:
+        logger.info("Neo4j client not available — skipping initialization")
 
     # Initialize ChromaDB collections
     max_retries = 5
@@ -817,7 +831,8 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown."""
     logger.info("Shutting down application...")
-    neo4j_client.close()
+    if neo4j_client is not None:
+        neo4j_client.close()
 
 
 @app.get("/")
@@ -834,7 +849,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    neo4j_status = "connected" if neo4j_client.driver else "disconnected"
+    neo4j_status = "connected" if (neo4j_client and neo4j_client.driver) else "not available"
     chromadb_status = "ready" if chroma_client.client else "not ready"
     # Check LLM availability
     llm = get_default_llm()
@@ -861,6 +876,9 @@ async def health_check():
 @app.post("/api/v1/rag/retrieve")
 async def rag_retrieve(query: str, collection: str = "yard_rules", use_llm: bool = False):
     """RAG retrieval endpoint with optional LLM generation using Anthropic Claude."""
+    if HybridRetrievalChain is None:
+        raise HTTPException(status_code=503, detail="RAG retrieval not available (sentence-transformers not installed)")
+
     try:
         # Create retrieval chain for specified collection
         chain = HybridRetrievalChain(collection_name=collection, use_llm=use_llm)
@@ -911,6 +929,8 @@ async def llm_generate(request: LLMGenerateRequest):
 
     try:
         if request.use_context:
+            if HybridRetrievalChain is None:
+                raise HTTPException(status_code=503, detail="RAG context not available (sentence-transformers not installed)")
             # Retrieve relevant context
             chain = HybridRetrievalChain(collection_name=request.collection)
             retrieval_results = chain.hybrid_retrieve(request.prompt)

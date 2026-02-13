@@ -1,15 +1,12 @@
 services:
-  # ============================================
-  # 1. FastAPI Backend (Docker Web Service)
-  # ============================================
+  # Backend API (Free Docker Web Service)
   - type: web
     name: yard-optimizer-api
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.render
     dockerContext: .
-    plan: starter
+    plan: free
     region: oregon
-    healthCheckPath: /health
     envVars:
       - key: DOCKER_ENV
         value: "true"
@@ -25,16 +22,8 @@ services:
         sync: false
       - key: GOOGLE_MODEL
         value: "gemini-2.0-flash"
-      - key: NEO4J_URI
-        sync: false
-      - key: NEO4J_USER
-        value: "neo4j"
-      - key: NEO4J_PASSWORD
-        sync: false
 
-  # ============================================
-  # 2. React Frontend (Static Site)
-  # ============================================
+  # Frontend (Free Static Site)
   - type: web
     name: yard-optimizer-frontend
     runtime: static
@@ -51,24 +40,3 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://yard-optimizer-api.onrender.com
-
-  # ============================================
-  # 3. ChromaDB (Private Docker Service)
-  # ============================================
-  - type: pserv
-    name: yard-optimizer-chromadb
-    runtime: docker
-    plan: starter
-    region: oregon
-    dockerCommand: ""
-    image:
-      url: docker.io/chromadb/chroma:latest
-    envVars:
-      - key: IS_PERSISTENT
-        value: "TRUE"
-      - key: ANONYMIZED_TELEMETRY
-        value: "FALSE"
-    disk:
-      name: chromadb-data
-      mountPath: /chroma/chroma
-      sizeGB: 1

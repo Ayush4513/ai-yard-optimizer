@@ -1,0 +1,74 @@
+services:
+  # ============================================
+  # 1. FastAPI Backend (Docker Web Service)
+  # ============================================
+  - type: web
+    name: yard-optimizer-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: DOCKER_ENV
+        value: "true"
+      - key: CHROMA_USE_DOCKER
+        value: "false"
+      - key: CHROMA_DB_PATH
+        value: "/app/chroma_db"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: "claude-sonnet-4-5-20250929"
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_MODEL
+        value: "gemini-2.0-flash"
+      - key: NEO4J_URI
+        sync: false
+      - key: NEO4J_USER
+        value: "neo4j"
+      - key: NEO4J_PASSWORD
+        sync: false
+
+  # ============================================
+  # 2. React Frontend (Static Site)
+  # ============================================
+  - type: web
+    name: yard-optimizer-frontend
+    runtime: static
+    buildCommand: cd Yard-Optimization && npm install && npm run build
+    staticPublishPath: ./Yard-Optimization/dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache, no-store, must-revalidate
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://yard-optimizer-api.onrender.com
+
+  # ============================================
+  # 3. ChromaDB (Private Docker Service)
+  # ============================================
+  - type: pserv
+    name: yard-optimizer-chromadb
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerCommand: ""
+    image:
+      url: docker.io/chromadb/chroma:latest
+    envVars:
+      - key: IS_PERSISTENT
+        value: "TRUE"
+      - key: ANONYMIZED_TELEMETRY
+        value: "FALSE"
+    disk:
+      name: chromadb-data
+      mountPath: /chroma/chroma
+      sizeGB: 1

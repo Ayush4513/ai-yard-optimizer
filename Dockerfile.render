@@ -21,7 +21,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
         "anthropic==0.18.1" \
         "python-multipart==0.0.6" \
         "httpx==0.25.2" \
-        "SQLAlchemy>=2.0.0"
+        "SQLAlchemy>=2.0.0" \
+        "neo4j==5.14.1"
 
 # Copy application code
 COPY .env* ./
